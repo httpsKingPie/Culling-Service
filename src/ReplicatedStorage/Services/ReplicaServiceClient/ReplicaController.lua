@@ -159,7 +159,7 @@ do
 	Madwork = {
 		GetShared = function(package_name, item_name)
 			-- Ignoring package_name as we're working without Madwork framework
-			return WaitForDescendant(game:GetService("ReplicatedScriptService"), item_name, "module")
+			return WaitForDescendant(game:GetService("ReplicatedStorage"), item_name, "module")
 		end,
 		GetModule = function(package_name, module_name)
 			return WaitForDescendant(game:GetService("ServerScriptService"), module_name, "module")

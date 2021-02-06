@@ -14,6 +14,8 @@ if RunService:IsClient() then
 
     local LocalPlayer = Players.LocalPlayer
 
+    ClientFunctions.CullOutWorkspace()
+
     ClientFunctions.InitializePlayer(LocalPlayer)
 end
 
