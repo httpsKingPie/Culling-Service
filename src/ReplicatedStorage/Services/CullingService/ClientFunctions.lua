@@ -41,7 +41,7 @@ function module.PauseCulling()
     module["Paused"] = true
 end
 
-function module.CullIn(Range, Objects)
+function module.CullIn(Object)
 
 end
 
@@ -71,13 +71,19 @@ function module.InitializePlayer(Player: Player) --// This gets called once and 
         return
 
         ReplicaController.ReplicaOfClassCreated("CullingReplica_"..tostring(Player.UserId), function(Replica)
-            for Range, _ in pairs (Replica.Data) do --// Ranges are Short, Medium, and Long
-                Replica:ListenToChange({Range}, function(Objects) --// Listens to changes (i.e. when these get replicated) and then we can do something with the Objects which are always the data
-                    if module["Paused"] then
-                        module.CullIn(Range, Objects)
-                    end
-                end)
-            end
+
+            Replica:ListenToArrayInsert({"ActiveObjects"}, function(Objects) --// Listens to stuff added to the active objects
+                if module["Paused"] then
+                    module.CullIn(Objects)
+                end
+            end)
+
+            Replica:ListenToArrayRemove({"ActiveObjects"}, function(Models) --// Listens to stuff removed from the active objects
+                if module["Paused"] then
+                    module.CullOut(Models)
+                end
+            end)
+
         end)
     end
 

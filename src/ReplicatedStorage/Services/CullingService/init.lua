@@ -22,7 +22,7 @@ end
 if RunService:IsServer() then
     local ServerFunctions = require(script.ServerFunctions)
 
-    
+    ServerFunctions.Initialize()
 end
 
 return module
