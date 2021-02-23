@@ -46,7 +46,7 @@ function module.CullIn(Object)
 end
 
 function module.CullOut(Object) --// An array of objects or individual BaseParts can be added as arguments
-    if type(Object) == "table" then --// If an array is passed, the children are recylced into the function
+    if type(Object) == "table" then --// If an array is passed, the children are recyclced into the function
         for _, Child in pairs (Object) do
             module.CullOut(Child)
         end
@@ -54,7 +54,12 @@ function module.CullOut(Object) --// An array of objects or individual BaseParts
         return
     end
 
-    if not Object:IsA("Model") or Object:IsA("BasePart") then
+    if Object:IsA("Model") or Object:IsA("Folder") then
+        module.CullOut(Object:GetChildren())
+        return
+    end
+
+    if not Object:IsA("BasePart") then
         return
     end
 
@@ -62,7 +67,11 @@ function module.CullOut(Object) --// An array of objects or individual BaseParts
 end
 
 function module.CullOutWorkspace()
-    module.CullOut(workspace:GetChildren())
+    for _, Model in pairs (workspace:GetChildren()) do
+        if Model:IsA("Model") then
+            module.CullOut(Model:GetChildren())
+        end
+    end
 end
 
 function module.InitializePlayer(Player: Player) --// This gets called once and is what handles the basic "listening"

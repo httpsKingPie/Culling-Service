@@ -16,10 +16,25 @@ local module = {
 
 function module.InitializePlayer(Player: Player)
      --// Generate a specific replica for each player
-    local CullingReplica = ReplicaService.NewClassToken({
+    local CullingReplica = ReplicaService.NewReplica({
         ClassToken = ReplicaService.NewClassToken("CullingReplica_"..tostring(Player.UserId)),
         Data = {
-            ActiveObjects = {} --// No data yet
+            ActiveModels = {}, --// No data yet (this will be filled with models or BaseParts)
+            --[[
+                ActiveModels looks like = {
+                    [1] = Model1,
+                    [2] = Model2,
+                    etc... and these are actual instances, not strings
+                }
+            ]]
+            ActiveRanges = {}, --// Shares the same index as each model, but this is a table of strings (ex: short, medium, and long)
+            --[[
+                ActiveRanges looks like = {
+                    [1] = {"Long"},
+                    [2] = {"Long", "Medium"},
+                    etc... the indexes correspond to the model indexes in ActiveModels
+                }
+            ]]
         },
         Replication = Player,
     })
@@ -46,6 +61,18 @@ local function CheckObject(Object)
     end
 end
 
+local function InDistance(ModelDistance: number, MaximumDistance: number)
+    if ModelDistance <= MaximumDistance then
+        return true
+    else
+        return false
+    end
+end
+
+local function CullIn(DistanceFolder: Folder)
+
+end
+
 function module.GetPlayerReplica(Player)
     if not module["Player Information"][Player.Name] then
         warn("Played not initialized - unable to load culling replica")
@@ -58,7 +85,8 @@ end
 function module.InitializeOctree()
     for _, Model in pairs (workspace:GetChildren()) do
         if Model:IsA("Model") then
-            --// Deprecated function, but it's the only way to effectively and reliably find the center of a model (even though Roblox contests it isn't)
+            --// GetModelCFrame is a deprecated function, but it's the only way to effectively and reliably find the center of a model (even though Roblox contests it isn't)
+            
             module["Octree"]:CreateNode(Model:GetModelCFrame().Position, Model)
         end
     end
@@ -68,16 +96,27 @@ function module.GetCulledModels(CullingReplica) --// Returns models that are cur
     return CullingReplica.Data.ActiveObjects
 end
 
+function module.GetCulledRanges(CullingReplica, Model: Model)
+    local TableIndex = table.find(CullingReplica.Data.ActiveObjects, Model)
+
+    if not TableIndex then --// The model is not currently culled in
+        return
+    else
+        return CullingReplica.Data.ActiveRanges[TableIndex]
+    end
+end
+
 function module.Initialize()
     module.InitializeOctree() --// Creates Octress for fast searching
 
     PieAPI.PlayerAdded(function(Player)
-        module.InitializePlayer(Player)
+        module.InitializePlayer(Player) --// Set up the basic player information in the module
 
-        local CullingReplica = module.GetPlayerReplica(Player)
+        local CullingReplica = module.GetPlayerReplica(Player) --// Assign a replica to the player
+
         local HumanoidRootPart
 
-        PieAPI.CharacterAdded(Player, function(Character)
+        PieAPI.CharacterAdded(Player, function(Character) --// Handle deaths
             HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
 
             local Humanoid = Character:WaitForChild("Humanoid")
@@ -87,25 +126,36 @@ function module.Initialize()
             end)
         end)
 
-        while true do
+        while true do --// Handle culling (server side)
             wait(Settings["Wait Time"])
             
-            local CulledObjects = module.GetCulledModels(CullingReplica)
+            if HumanoidRootPart then --// I.e. if the player is alive
 
-            if HumanoidRootPart then
-                local SearchTable = {
-                    ["Short"] = module["Octree"]:RadiusSearch(HumanoidRootPart.Position, Settings["Distances"]["Short"]),
-                    ["Medium"] = module["Octree"]:RadiusSearch(HumanoidRootPart.Position, Settings["Distances"]["Medium"]),
-                    ["Long"] = module["Octree"]:RadiusSearch(HumanoidRootPart.Position, Settings["Distances"]["Long"])
-                }
+                local CulledObjects = module.GetCulledModels(CullingReplica)
 
-                for DistanceType, RadiusSearch in pairs (SearchTable) do
-                    for _, Model in ipairs (RadiusSearch) do
-                        local IsInTable = table.find(module["Player Information"][Player.Name]["Culled Models"])
+                local ModelsInRadius, DistancesSquared = module["Octree"]:RadiusSearch(HumanoidRootPart.Position, Settings["Distances"]["Long"]) --// Search for all nodes at the furthest distances (long)
 
-                        if not IsInTable then
-                            table.insert()
-                        end
+                for Index, Model in ipairs (ModelsInRadius) do
+                    local ShortDistanceFolder = Model:FindFirstChild("Short")
+                    local MediumDistanceFolder = Model:FindFirstChild("Medium")
+                    local LongDistanceFolder = Model:FindFirstChild("Long")
+
+                    --[[
+                        Check for:
+                            * Model not already culled in
+                            * Model is in d
+                    ]]
+
+                    if not (CulledObjects[Model] ) and ShortDistanceFolder and InDistance(math.sqrt(DistancesSquared[Index]), Settings["Distances"]["Short"]) then
+                        print("Short in distance")
+                    end
+
+                    if not CulledObjects[Model] and MediumDistanceFolder and InDistance(math.sqrt(DistancesSquared[Index]), Settings["Distances"]["Medium"]) then
+                        print("Medium in distance")
+                    end
+
+                    if not CulledObjects[Model] and LongDistanceFolder and InDistance(math.sqrt(DistancesSquared[Index]), Settings["Distances"]["Long"]) then
+                        print("Long in distance")
                     end
                 end
             end
