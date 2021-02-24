@@ -45,6 +45,7 @@ function module.InitializePlayer(Player: Player)
     module["Player Information"][Player.Name]["Culling Replica"] = CullingReplica
 end
 
+--[[
 local function CheckObject(Object)
     local Short = Object:FindFirstChild("Short")
     local Medium = Object:FindFirstChild("Medium")
@@ -60,6 +61,7 @@ local function CheckObject(Object)
         end
     end
 end
+]]
 
 local function InDistance(ModelDistance: number, MaximumDistance: number)
     if ModelDistance <= MaximumDistance then
@@ -69,8 +71,32 @@ local function InDistance(ModelDistance: number, MaximumDistance: number)
     end
 end
 
-local function CullIn(DistanceFolder: Folder)
+local function CheckModelIsReadyToBeCulled(Model: Model)
+    if Model.PrimaryPart then
+        return
+    end
 
+    local Primary_Part = Instance.new("Part")
+    Primary_Part.Anchored = true
+    Primary_Part.Size = Vector3.new(.1, .1, .1)
+    Primary_Part.CFrame = Model:GetModelCFrame() --// Yes, it's deprecated - yes this is the best thing to use in this case, because it puts it exactly where the node is
+    Primary_Part.Parent = Model
+    Model.PrimaryPart = Primary_Part
+end
+
+local function CullIn(DistanceFolder: Folder, CullingReplica)
+    local Model = DistanceFolder.Parent
+
+    CheckModelIsReadyToBeCulled(Model)
+
+    --// Gets the index of the Model or adds the Model as an active model
+    local Index = table.find(module.GetCulledModels(CullingReplica), Model) or CullingReplica:ArrayInsert({"ActiveModels"}, Model)
+
+    --// Gets the range table or generates a blank table (the latter happens when the model is being added as an active model for the first time)
+    local RangeTable = module.GetCulledRanges(CullingReplica, Model) or {}
+    table.insert(RangeTable, DistanceFolder.Name)
+
+    CullingReplica:ArraySet("ActiveRanges", Index, RangeTable)
 end
 
 function module.GetPlayerReplica(Player)
@@ -83,7 +109,7 @@ function module.GetPlayerReplica(Player)
 end
 
 function module.InitializeOctree()
-    for _, Model in pairs (workspace:GetChildren()) do
+    for _, Model in pairs (game:GetService("ReplicatedStorage").ModelTest:GetChildren()) do
         if Model:IsA("Model") then
             --// GetModelCFrame is a deprecated function, but it's the only way to effectively and reliably find the center of a model (even though Roblox contests it isn't)
             
@@ -93,11 +119,11 @@ function module.InitializeOctree()
 end
 
 function module.GetCulledModels(CullingReplica) --// Returns models that are currently loaded in
-    return CullingReplica.Data.ActiveObjects
+    return CullingReplica.Data.ActiveModels
 end
 
 function module.GetCulledRanges(CullingReplica, Model: Model)
-    local TableIndex = table.find(CullingReplica.Data.ActiveObjects, Model)
+    local TableIndex = table.find(CullingReplica.Data.ActiveModels, Model)
 
     if not TableIndex then --// The model is not currently culled in
         return
@@ -142,19 +168,20 @@ function module.Initialize()
 
                     --[[
                         Check for:
-                            * Model not already culled in
-                            * Model is in d
+                            * Folder exists
+                            * Is in distance to be culled
                     ]]
 
-                    if not (CulledObjects[Model] ) and ShortDistanceFolder and InDistance(math.sqrt(DistancesSquared[Index]), Settings["Distances"]["Short"]) then
+                    if ShortDistanceFolder and InDistance(math.sqrt(DistancesSquared[Index]), Settings["Distances"]["Short"]) then
                         print("Short in distance")
+                        CullIn(ShortDistanceFolder, CullingReplica)
                     end
 
-                    if not CulledObjects[Model] and MediumDistanceFolder and InDistance(math.sqrt(DistancesSquared[Index]), Settings["Distances"]["Medium"]) then
+                    if MediumDistanceFolder and InDistance(math.sqrt(DistancesSquared[Index]), Settings["Distances"]["Medium"]) then
                         print("Medium in distance")
                     end
 
-                    if not CulledObjects[Model] and LongDistanceFolder and InDistance(math.sqrt(DistancesSquared[Index]), Settings["Distances"]["Long"]) then
+                    if LongDistanceFolder and InDistance(math.sqrt(DistancesSquared[Index]), Settings["Distances"]["Long"]) then
                         print("Long in distance")
                     end
                 end

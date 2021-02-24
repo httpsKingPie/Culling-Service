@@ -41,8 +41,32 @@ function module.PauseCulling()
     module["Paused"] = true
 end
 
-function module.CullIn(Object)
+function module.CullIn(RangeIndex, RangeTable)
+    print("Calling CullIn")
+    local Model = module["CullingReplica"].Data.ActiveModels[RangeIndex]
 
+    if Model.Parent == ReplicatedStorage then --// Model has not yet been culled or is currently called out
+        local NonCulledObjects = Model:GetAttribute("NonCulledObjects")
+
+        if not Model:GetAttribute("NonCulledObjects") then
+            NonCulledObjects = Instance.new("Folder")
+            NonCulledObjects.Parent = ReplicatedStorage.NonCulledObjects
+            NonCulledObjects.Name = "NonCulledObjects_".. Model.Name
+            
+            Model:SetAttribute("NonCulledObjects", NonCulledObjects)
+        end
+
+        for _, Folder in pairs (Model:GetChildren()) do --// Each model should be sorted into the "Short", "Medium", and "Long" sub-folders
+            if not table.find(RangeTable, Folder.Name) then --// Current range is not being culled in
+                Folder.Parent = NonCulledObjects
+            end
+        end
+
+        Model.Parent = workspace
+
+    elseif Model.Parent == workspace then --// Model is currently culled in, and needs a range updated
+
+    end
 end
 
 function module.CullOut(Object) --// An array of objects or individual BaseParts can be added as arguments
@@ -80,14 +104,13 @@ function module.InitializePlayer(Player: Player) --// This gets called once and 
         return
 
         ReplicaController.ReplicaOfClassCreated("CullingReplica_"..tostring(Player.UserId), function(Replica)
-
-            Replica:ListenToArrayInsert({"ActiveObjects"}, function(Objects) --// Listens to stuff added to the active objects
+            Replica:ListenToArraySet({"ActiveRanges"}, function(RangeIndex, RangeTable) --// Listen to the different ranges being streamed in
                 if module["Paused"] then
-                    module.CullIn(Objects)
+                    module.CullIn(RangeIndex, RangeTable) --// Determine whether to cull out or cull in
                 end
             end)
 
-            Replica:ListenToArrayRemove({"ActiveObjects"}, function(Models) --// Listens to stuff removed from the active objects
+            Replica:ListenToArrayRemove({"ActiveModels"}, function(Models) --// Listens to stuff removed from the active objects
                 if module["Paused"] then
                     module.CullOut(Models)
                 end
