@@ -89,14 +89,22 @@ local function CullIn(DistanceFolder: Folder, CullingReplica)
 
     CheckModelIsReadyToBeCulled(Model)
 
-    --// Gets the index of the Model or adds the Model as an active model
-    local Index = table.find(module.GetCulledModels(CullingReplica), Model) or CullingReplica:ArrayInsert({"ActiveModels"}, Model)
-
-    --// Gets the range table or generates a blank table (the latter happens when the model is being added as an active model for the first time)
+    local Index = table.find(module.GetCulledModels(CullingReplica), Model)
     local RangeTable = module.GetCulledRanges(CullingReplica, Model) or {}
+
     table.insert(RangeTable, DistanceFolder.Name)
 
-    CullingReplica:ArraySet("ActiveRanges", Index, RangeTable)
+    if Index then --// Means the model exists, which means the active ranges also exist
+        print("Index already exists!")
+        CullingReplica:ArraySet({"ActiveRanges"}, Index, RangeTable)
+    else --// Need to replicate the model and the range
+        CullingReplica:ArrayInsert({"ActiveModels"}, Model)
+        CullingReplica:ArrayInsert({"ActiveRanges"}, RangeTable)
+    end
+
+    --// Gets the index of the Model or adds the Model as an active model
+
+    --// Gets the range table or generates a blank table (the latter happens when the model is being added as an active model for the first time)
 end
 
 function module.GetPlayerReplica(Player)
@@ -116,6 +124,26 @@ function module.InitializeOctree()
             module["Octree"]:CreateNode(Model:GetModelCFrame().Position, Model)
         end
     end
+end
+
+function module.ModelCulledIn(CullingReplica, Model: Model)
+    local CulledModels = module.GetCulledModels(CullingReplica)
+
+    if table.find(CulledModels, Model) then
+        return true
+    else
+        return false
+    end
+end
+
+function module.RangeCulledIn(CullingReplica, Model: Model, RangeName: String)
+    local CulledRanges = module.GetCulledRanges(CullingReplica, Model)
+
+    if CulledRanges and table.find(CulledRanges, RangeName) then
+        return true
+    end
+
+    return false
 end
 
 function module.GetCulledModels(CullingReplica) --// Returns models that are currently loaded in
@@ -166,23 +194,26 @@ function module.Initialize()
                     local MediumDistanceFolder = Model:FindFirstChild("Medium")
                     local LongDistanceFolder = Model:FindFirstChild("Long")
 
+                    local ModelCulledIn = module.ModelCulledIn(CullingReplica, Model)
                     --[[
                         Check for:
                             * Folder exists
                             * Is in distance to be culled
                     ]]
 
-                    if ShortDistanceFolder and InDistance(math.sqrt(DistancesSquared[Index]), Settings["Distances"]["Short"]) then
+                    if ShortDistanceFolder and InDistance(math.sqrt(DistancesSquared[Index]), Settings["Distances"]["Short"]) and not (ModelCulledIn and module.RangeCulledIn(CullingReplica, Model, "Short")) then
                         print("Short in distance")
                         CullIn(ShortDistanceFolder, CullingReplica)
                     end
 
-                    if MediumDistanceFolder and InDistance(math.sqrt(DistancesSquared[Index]), Settings["Distances"]["Medium"]) then
+                    if MediumDistanceFolder and InDistance(math.sqrt(DistancesSquared[Index]), Settings["Distances"]["Medium"]) and not (ModelCulledIn and module.RangeCulledIn(CullingReplica, Model, "Medium")) then
                         print("Medium in distance")
+                        CullIn(MediumDistanceFolder, CullingReplica)
                     end
 
-                    if LongDistanceFolder and InDistance(math.sqrt(DistancesSquared[Index]), Settings["Distances"]["Long"]) then
+                    if LongDistanceFolder and InDistance(math.sqrt(DistancesSquared[Index]), Settings["Distances"]["Long"]) and not (ModelCulledIn and module.RangeCulledIn(CullingReplica, Model, "Long")) then
                         print("Long in distance")
+                        CullIn(LongDistanceFolder, CullingReplica)
                     end
                 end
             end

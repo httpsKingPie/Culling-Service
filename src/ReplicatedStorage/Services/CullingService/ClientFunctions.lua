@@ -15,6 +15,7 @@ local ReplicaController = require(ReplicaServiceClient:WaitForChild("ReplicaCont
 
 local module = {
     ["CullingReplica"] = nil, --// Becomes the CullingReplica specific to this client
+    ["Non Culled Objects"] = {}, --// A dictionary of [Model] = Folder to non-culled objects
     ["Paused"] = true, --// Whether Culling is paused or not (defaults to true, since culling may want to be done manually at the beginning for cutscnees, etc.)
 }
 
@@ -42,18 +43,21 @@ function module.PauseCulling()
 end
 
 function module.CullIn(RangeIndex, RangeTable)
-    print("Calling CullIn")
     local Model = module["CullingReplica"].Data.ActiveModels[RangeIndex]
+    local NonCulledObjects = module["Non Culled Objects"][Model]
 
-    if Model.Parent == ReplicatedStorage then --// Model has not yet been culled or is currently called out
-        local NonCulledObjects = Model:GetAttribute("NonCulledObjects")
+    if Model:IsDescendantOf(ReplicatedStorage) then --// Model has not yet been culled or is currently called out
+        --// Attributes don't yet support object values *sigh*
 
-        if not Model:GetAttribute("NonCulledObjects") then
+        --local NonCulledObjects = Model:GetAttribute("NonCulledObjects")
+
+        if not NonCulledObjects then
             NonCulledObjects = Instance.new("Folder")
             NonCulledObjects.Parent = ReplicatedStorage.NonCulledObjects
             NonCulledObjects.Name = "NonCulledObjects_".. Model.Name
             
-            Model:SetAttribute("NonCulledObjects", NonCulledObjects)
+            --Model:SetAttribute("NonCulledObjects", NonCulledObjects)
+            module["Non Culled Objects"][Model] = NonCulledObjects
         end
 
         for _, Folder in pairs (Model:GetChildren()) do --// Each model should be sorted into the "Short", "Medium", and "Long" sub-folders
@@ -65,7 +69,24 @@ function module.CullIn(RangeIndex, RangeTable)
         Model.Parent = workspace
 
     elseif Model.Parent == workspace then --// Model is currently culled in, and needs a range updated
+        
+    end
+end
 
+function module.CullUpdate(RangeIndex, RangeTable)
+    local Model = module["CullingReplica"].Data.ActiveModels[RangeIndex]
+    local NonCulledObjects = module["Non Culled Objects"][Model]
+
+    for _, Folder in pairs (NonCulledObjects:GetChildren()) do
+        if table.find(RangeTable, Folder.Name) then
+            Folder.Parent = Model
+        end
+    end
+
+    for _, Folder in pairs (Model:GetChildren()) do --// Each model should be sorted into the "Short", "Medium", and "Long" sub-folders
+        if not table.find(RangeTable, Folder.Name) then --// Current range is not being culled in
+            Folder.Parent = NonCulledObjects
+        end
     end
 end
 
@@ -102,22 +123,30 @@ function module.InitializePlayer(Player: Player) --// This gets called once and 
     if not Player then
         warn("Player arguemnt not passed, unable to initialize culling")
         return
-
-        ReplicaController.ReplicaOfClassCreated("CullingReplica_"..tostring(Player.UserId), function(Replica)
-            Replica:ListenToArraySet({"ActiveRanges"}, function(RangeIndex, RangeTable) --// Listen to the different ranges being streamed in
-                if module["Paused"] then
-                    module.CullIn(RangeIndex, RangeTable) --// Determine whether to cull out or cull in
-                end
-            end)
-
-            Replica:ListenToArrayRemove({"ActiveModels"}, function(Models) --// Listens to stuff removed from the active objects
-                if module["Paused"] then
-                    module.CullOut(Models)
-                end
-            end)
-
-        end)
     end
+
+    ReplicaController.ReplicaOfClassCreated("CullingReplica_"..tostring(Player.UserId), function(Replica)
+        module["CullingReplica"] = Replica
+
+        Replica:ListenToArraySet({"ActiveRanges"}, function(RangeIndex, RangeTable) --// Listen to the different ranges being streamed in
+            if module["Paused"] then
+                module.CullUpdate(RangeIndex, RangeTable) --// Determine whether to cull out or cull in
+            end
+        end)
+
+        Replica:ListenToArrayInsert({"ActiveRanges"}, function(RangeIndex, RangeTable) --// Listen to the different ranges being streamed in
+            if module["Paused"] then
+                module.CullIn(RangeIndex, RangeTable) --// Determine whether to cull out or cull in
+            end
+        end)
+
+        Replica:ListenToArrayRemove({"ActiveModels"}, function(Models) --// Listens to stuff removed from the active objects
+            if module["Paused"] then
+                module.CullOut(Models)
+            end
+        end)
+
+    end)
 
     PieAPI.CharacterAdded(Player, function(Character)
         
