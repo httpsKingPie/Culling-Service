@@ -190,28 +190,32 @@ function module.Initialize()
                 local ModelsInRadius, DistancesSquared = module["Octree"]:RadiusSearch(HumanoidRootPart.Position, Settings["Distances"]["Long"]) --// Search for all nodes at the furthest distances (long)
 
                 for Index, Model in ipairs (ModelsInRadius) do
-                    local ShortDistanceFolder = Model:FindFirstChild("Short")
-                    local MediumDistanceFolder = Model:FindFirstChild("Medium")
-                    local LongDistanceFolder = Model:FindFirstChild("Long")
+                    local ShortDistanceFolder = Model:FindFirstChild("Short") --// Returns a distance folder (Short)
+                    local MediumDistanceFolder = Model:FindFirstChild("Medium") --// Returns a distance folder (Medium)
+                    local LongDistanceFolder = Model:FindFirstChild("Long") --// Returns a distance folder (Long)
 
-                    local ModelCulledIn = module.ModelCulledIn(CullingReplica, Model)
+                    local ModelCulledIn = module.ModelCulledIn(CullingReplica, Model) --// Tells whether the model is culled in
+
+                    local InShortDistance = InDistance(math.sqrt(DistancesSquared[Index]), Settings["Distances"]["Short"])
+                    local InMediumDistance = InDistance(math.sqrt(DistancesSquared[Index]), Settings["Distances"]["Medium"])
+                    local InLongDistance = InDistance(math.sqrt(DistancesSquared[Index]), Settings["Distances"]["Long"])
                     --[[
                         Check for:
                             * Folder exists
                             * Is in distance to be culled
                     ]]
 
-                    if ShortDistanceFolder and InDistance(math.sqrt(DistancesSquared[Index]), Settings["Distances"]["Short"]) and not (ModelCulledIn and module.RangeCulledIn(CullingReplica, Model, "Short")) then
+                    if ShortDistanceFolder and InShortDistance and not (ModelCulledIn and module.RangeCulledIn(CullingReplica, Model, "Short")) then
                         print("Short in distance")
                         CullIn(ShortDistanceFolder, CullingReplica)
                     end
 
-                    if MediumDistanceFolder and InDistance(math.sqrt(DistancesSquared[Index]), Settings["Distances"]["Medium"]) and not (ModelCulledIn and module.RangeCulledIn(CullingReplica, Model, "Medium")) then
+                    if MediumDistanceFolder and InMediumDistance and not (ModelCulledIn and module.RangeCulledIn(CullingReplica, Model, "Medium")) then
                         print("Medium in distance")
                         CullIn(MediumDistanceFolder, CullingReplica)
                     end
 
-                    if LongDistanceFolder and InDistance(math.sqrt(DistancesSquared[Index]), Settings["Distances"]["Long"]) and not (ModelCulledIn and module.RangeCulledIn(CullingReplica, Model, "Long")) then
+                    if LongDistanceFolder and InLongDistance and not (ModelCulledIn and module.RangeCulledIn(CullingReplica, Model, "Long")) then
                         print("Long in distance")
                         CullIn(LongDistanceFolder, CullingReplica)
                     end
