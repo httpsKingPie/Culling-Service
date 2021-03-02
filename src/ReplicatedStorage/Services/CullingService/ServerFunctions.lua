@@ -9,6 +9,8 @@ local ReplicaService = require(ServerScriptService.ReplicaServiceServer.ReplicaS
 
 local Settings = require(script.Parent.Settings)
 
+local ModelStorage = ReplicatedStorage.ModelTest
+
 local module = {
     ["Octree"] = OctreeModule.new(), --// Generates a new octree to be referenced
     ["Player Information"] = {},  --// Store all Player replicas, currently streamed in objects and not currently streamed in objects
@@ -84,7 +86,7 @@ local function CheckModelIsReadyToBeCulled(Model: Model)
     Model.PrimaryPart = Primary_Part
 end
 
-local function CullIn(DistanceFolder: Folder, CullingReplica)
+local function CullIn(DistanceFolder: Folder, CullingReplica) --// Can Cull in a full model or cull in specific ranges
     local Model = DistanceFolder.Parent
 
     CheckModelIsReadyToBeCulled(Model)
@@ -95,7 +97,6 @@ local function CullIn(DistanceFolder: Folder, CullingReplica)
     table.insert(RangeTable, DistanceFolder.Name)
 
     if Index then --// Means the model exists, which means the active ranges also exist
-        print("Index already exists!")
         CullingReplica:ArraySet({"ActiveRanges"}, Index, RangeTable)
     else --// Need to replicate the model and the range
         CullingReplica:ArrayInsert({"ActiveModels"}, Model)
@@ -105,6 +106,28 @@ local function CullIn(DistanceFolder: Folder, CullingReplica)
     --// Gets the index of the Model or adds the Model as an active model
 
     --// Gets the range table or generates a blank table (the latter happens when the model is being added as an active model for the first time)
+end
+
+local function CullOut(DistanceFolder: Folder, CullingReplica) --// Culls out specific ranges, and forwards any models needing to completely culled out to CompleteCullOut
+    print("Cull out was called")
+    local Model = DistanceFolder.Parent
+
+    --// Don't need to check if it is ready to be culled, since it will be already in workspace
+
+    local Index = table.find(module.GetCulledModels(CullingReplica), Model)
+    local RangeTable = module.GetCulledRanges(CullingReplica, Model)
+
+    local RangesCulledIn = #RangeTable --// If this is 1, then that means removing this range will result in removing the whole model.  This should never be 0
+
+    if RangesCulledIn > 1 then --// Means we are updating the model, not removing the model
+        local RangeIndex = table.find(RangeTable, DistanceFolder.Name)
+        table.remove(RangeTable, RangeIndex)
+
+        CullingReplica:ArraySet({"ActiveRanges"}, Index, RangeTable)
+    else --// Removing this range will mean effectively removing the model so we completely cull it out
+        CullingReplica:ArrayRemove({"ActiveModels"}, Index)
+        CullingReplica:ArrayRemove({"ActiveRanges"}, Index)
+    end
 end
 
 function module.GetPlayerReplica(Player)
@@ -117,7 +140,7 @@ function module.GetPlayerReplica(Player)
 end
 
 function module.InitializeOctree()
-    for _, Model in pairs (game:GetService("ReplicatedStorage").ModelTest:GetChildren()) do
+    for _, Model in pairs (ModelStorage:GetChildren()) do
         if Model:IsA("Model") then
             --// GetModelCFrame is a deprecated function, but it's the only way to effectively and reliably find the center of a model (even though Roblox contests it isn't)
             
@@ -136,7 +159,7 @@ function module.ModelCulledIn(CullingReplica, Model: Model)
     end
 end
 
-function module.RangeCulledIn(CullingReplica, Model: Model, RangeName: String)
+function module.RangeCulledIn(CullingReplica, Model: Model, RangeName: String) --// Returns if the range is currently culled in
     local CulledRanges = module.GetCulledRanges(CullingReplica, Model)
 
     if CulledRanges and table.find(CulledRanges, RangeName) then
@@ -184,10 +207,8 @@ function module.Initialize()
             wait(Settings["Wait Time"])
             
             if HumanoidRootPart then --// I.e. if the player is alive
-
-                local CulledObjects = module.GetCulledModels(CullingReplica)
-
-                local ModelsInRadius, DistancesSquared = module["Octree"]:RadiusSearch(HumanoidRootPart.Position, Settings["Distances"]["Long"]) --// Search for all nodes at the furthest distances (long)
+                print("Scanning")
+                local ModelsInRadius, DistancesSquared = module["Octree"]:RadiusSearch(HumanoidRootPart.Position, Settings["Distances"]["Search Radius"]) --// Search for all nodes at the furthest distances (long)
 
                 for Index, Model in ipairs (ModelsInRadius) do
                     local ShortDistanceFolder = Model:FindFirstChild("Short") --// Returns a distance folder (Short)
@@ -199,11 +220,54 @@ function module.Initialize()
                     local InShortDistance = InDistance(math.sqrt(DistancesSquared[Index]), Settings["Distances"]["Short"])
                     local InMediumDistance = InDistance(math.sqrt(DistancesSquared[Index]), Settings["Distances"]["Medium"])
                     local InLongDistance = InDistance(math.sqrt(DistancesSquared[Index]), Settings["Distances"]["Long"])
+                    
                     --[[
                         Check for:
                             * Folder exists
                             * Is in distance to be culled
+                            * Model is not already culled in AND the range for that model is not already culled in
                     ]]
+
+                    local function DetermineCullIn(DistanceFolder: Folder, InDistance: boolean)
+                        if not DistanceFolder then
+                            return
+                        end
+
+                        if not InDistance then
+                            return
+                        end
+
+                        if ModelCulledIn and module.RangeCulledIn(CullingReplica, Model, DistanceFolder.Name) then
+                            return
+                        end
+
+                        CullIn(DistanceFolder, CullingReplica)
+                    end
+
+                    local function CheckForUpdate(DistanceFolder: Folder, InDistance: boolean)
+                        local RangeCulledIn = module.RangeCulledIn(CullingReplica, Model, DistanceFolder.Name)
+
+                        if not DistanceFolder then
+                            return
+                        end
+
+                        if not InDistance and RangeCulledIn then
+                            CullOut(DistanceFolder, CullingReplica)
+                            return
+                        end
+                    end
+
+                    DetermineCullIn(ShortDistanceFolder, InShortDistance)
+                    DetermineCullIn(MediumDistanceFolder, InMediumDistance)
+                    DetermineCullIn(LongDistanceFolder, InLongDistance)
+
+                    if ModelCulledIn then
+                        CheckForUpdate(ShortDistanceFolder, InShortDistance)
+                        CheckForUpdate(MediumDistanceFolder, InMediumDistance)
+                        CheckForUpdate(LongDistanceFolder, InLongDistance)
+                    end
+
+                    --[[
 
                     if ShortDistanceFolder and InShortDistance and not (ModelCulledIn and module.RangeCulledIn(CullingReplica, Model, "Short")) then
                         print("Short in distance")
@@ -219,6 +283,8 @@ function module.Initialize()
                         print("Long in distance")
                         CullIn(LongDistanceFolder, CullingReplica)
                     end
+                    
+                    ]]
                 end
             end
         end
