@@ -8,7 +8,7 @@ local PieAPI = require(HelpfulModules:WaitForChild("PieAPI"))
 
 local ReplicaController = require(ReplicaServiceClient:WaitForChild("ReplicaController"))
 
-local ModelStorage = ReplicatedStorage:WaitForChild("ModelTest")
+local ModelStorage = ReplicatedStorage:WaitForChild("ModelStorage")
 
 --[[
     Demo version will check the whole map, broadly searching every check period for whatever is within streaming distance

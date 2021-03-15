@@ -9,7 +9,7 @@ local ReplicaService = require(ServerScriptService.ReplicaServiceServer.ReplicaS
 
 local Settings = require(script.Parent.Settings)
 
-local ModelStorage = ReplicatedStorage.ModelTest
+local ModelStorage = ReplicatedStorage.ModelStorage
 
 local module = {
     ["Octree"] = OctreeModule.new(), --// Generates a new octree to be referenced
