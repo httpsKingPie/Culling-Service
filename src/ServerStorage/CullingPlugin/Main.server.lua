@@ -38,7 +38,7 @@ local HintText = {
 
 --// Initial plugin set up
 local Toolbar = plugin:CreateToolbar("Culling System")
-local OpenGUIButton = Toolbar:CreateButton("Open GUI", "Open the GUI to Control the Culling System", "rbxassetid://23996858")
+local OpenGUIButton = Toolbar:CreateButton("Toggle GUI", "Open the GUI to Control the Culling System", "rbxassetid://23996858")
 
 --// Local functions
 local function OutputText(Text: string)
@@ -74,28 +74,6 @@ local function InitCheck()
     return true
 end
 
-local function SetAnchorPoint(Model: Model)
-    local AnchorPoint = Instance.new("Part")
-    AnchorPoint.Size = Vector3.new(.05, .05, .05)
-    AnchorPoint.Transparency = 1
-    AnchorPoint.Anchored = true
-    AnchorPoint.Name = "AnchorPoint_".. Model.Name
-    AnchorPoint.Parent = AnchorPoints
-
-    local PrimaryPart = Model.PrimaryPart
-
-    if not PrimaryPart then
-        PrimaryPart = Instance.new("Part")
-        PrimaryPart.Size = Vector3.new(.05, .05, .05)
-        PrimaryPart.Transparency = 1
-        PrimaryPart.Anchored = true
-        PrimaryPart.CFrame = Model:GetModelCFrame() --// Yeah, I know it's deprectated :/
-        PrimaryPart.Name = "PrimaryPart"
-    end
-
-    AnchorPoint.CFrame = PrimaryPart.CFrame
-end
-
 local function GetTrueName(Name: string)
     return string.sub(Name, AnchorPointPrefixLength + 1)
 end
@@ -117,6 +95,32 @@ local function HintCheck()
     return true
 end
 
+local function CheckModelHasPrimaryPart(Model: Model)
+    if Model.PrimaryPart then
+        return
+    end
+
+    local Primary_Part = Instance.new("Part")
+    Primary_Part.Anchored = true
+    Primary_Part.Name = "ModelPrimaryPart"
+    Primary_Part.Size = Vector3.new(.1, .1, .1)
+    Primary_Part.CFrame = Model:GetModelCFrame() --// Yes, it's deprecated - yes this is the best thing to use in this case, because it puts it exactly where the node is
+    Primary_Part.Parent = Model
+    Model.PrimaryPart = Primary_Part
+end
+
+local function SetAnchorPoint(Model: Model)
+    local AnchorPoint = Instance.new("Part")
+    AnchorPoint.Size = Vector3.new(.05, .05, .05)
+    AnchorPoint.Transparency = 1
+    AnchorPoint.Anchored = true
+    AnchorPoint.Name = "AnchorPoint_".. Model.Name
+    AnchorPoint.Parent = AnchorPoints
+
+    CheckModelHasPrimaryPart(Model)
+
+    AnchorPoint.CFrame = Model.PrimaryPart.CFrame
+end
 
 --// Clicking Plugin Button
 OpenGUIButton.Click:Connect(function()
@@ -143,6 +147,8 @@ AddToModelStorageButton.MouseButton1Click:Connect(function()
 
             if not ModelAlreadyExists then
                 local ModelClone = Model:Clone()
+                
+                CheckModelHasPrimaryPart(ModelClone)
                 ModelClone.Parent = ModelStorage
             end
         else
@@ -162,17 +168,19 @@ CullInButton.MouseButton1Click:Connect(function()
         return
     end
 
-    for _, AnchorPoint in pairs (workspace:GetChildren()) do
+    for _, AnchorPoint in pairs (AnchorPoints:GetChildren()) do
         if string.sub(AnchorPoint.Name, 1, AnchorPointPrefixLength) == AnchorPointPrefix then
             local AssociatedModelName = GetTrueName(AnchorPoint.Name)
 
             local Model = ModelStorage:FindFirstChild(AssociatedModelName)
 
             if Model then
-                local ModelToCull: Model --// For handy syntax autocomplete
-                ModelToCull = Model:Clone()
+                CheckModelHasPrimaryPart(Model)
+                
+                local ModelToCull: Model = Model:Clone()--// For handy syntax autocomplete
 
                 ModelToCull:SetPrimaryPartCFrame(AnchorPoint.CFrame)
+                ModelToCull.Parent = CulledObjects
             end
         end
     end

@@ -1,28 +1,16 @@
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-
-local HelpfulModules = ReplicatedStorage.HelpfulModules
-local PieAPI = require(HelpfulModules:WaitForChild("PieAPI"))
-
-local Settings = require(script.Settings)
 
 local module = {}
 
 if RunService:IsClient() then
-    local ClientFunctions = require(script.ClientFunctions)
+    local Handler = require(script.Handler)
 
     local LocalPlayer = Players.LocalPlayer
 
-    ClientFunctions.CullOutWorkspace()
-
-    ClientFunctions.InitializePlayer(LocalPlayer)
-end
-
-if RunService:IsServer() then
-    local ServerFunctions = require(script.ServerFunctions)
-
-    ServerFunctions.Initialize()
+    Handler.InitializePlayer(LocalPlayer)
+else
+    warn("CullingService attempted to run on the server - please run this on the client")
 end
 
 return module
