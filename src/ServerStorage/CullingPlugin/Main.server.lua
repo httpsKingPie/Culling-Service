@@ -1,5 +1,7 @@
+--// Don't forget to put Gui as a child of the plugin folder/sibling of the Main script
+
 local ChangeHistoryService = game:GetService("ChangeHistoryService")
-local CoreGUI = game:GetService("CoreGui")
+local CoreGui = game:GetService("CoreGui")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Selection = game:GetService("Selection")
 
@@ -27,8 +29,7 @@ local HintLabel = HintFrame:WaitForChild("HintLabel")
 
 --// Basic plugin settings
 --// Normally would use modules, but not sure how well that works with plugins :/
-local AnchorPointPrefix = "AnchorPoint_"
-local AnchorPointPrefixLength = #AnchorPointPrefix
+
 local HintText = {
     ["AddToModelStorageButton"] = "This will add the model to the ModelStorage folder, provided the model does not already exist.  Very useful to use after setting anchor points",
     ["CullInButton"] = "This will cull in all objects located in ReplicatedStorage.ModelStorage to their respective anchor points.  Cloned models will be found in Workspace.CulledObjects.  This is useful for previewing the current state of the map",
@@ -38,7 +39,7 @@ local HintText = {
 
 --// Initial plugin set up
 local Toolbar = plugin:CreateToolbar("Culling System")
-local OpenGUIButton = Toolbar:CreateButton("Toggle GUI", "Open the GUI to Control the Culling System", "rbxassetid://23996858")
+local OpenGUIButton = Toolbar:CreateButton("Toggle GUI", "Control the Culling System", "rbxassetid://6520368338")
 
 --// Local functions
 local function OutputText(Text: string)
@@ -74,10 +75,6 @@ local function InitCheck()
     return true
 end
 
-local function GetTrueName(Name: string)
-    return string.sub(Name, AnchorPointPrefixLength + 1)
-end
-
 local function SetHint(ButtonName: string)
     if not HintText[ButtonName] then
         return
@@ -95,7 +92,7 @@ local function HintCheck()
     return true
 end
 
-local function CheckModelHasPrimaryPart(Model: Model)
+local function CheckForPrimaryPart(Model: Model)
     if Model.PrimaryPart then
         return
     end
@@ -114,20 +111,20 @@ local function SetAnchorPoint(Model: Model)
     AnchorPoint.Size = Vector3.new(.05, .05, .05)
     AnchorPoint.Transparency = 1
     AnchorPoint.Anchored = true
-    AnchorPoint.Name = "AnchorPoint_".. Model.Name
+    AnchorPoint.Name = Model.Name
     AnchorPoint.Parent = AnchorPoints
 
-    CheckModelHasPrimaryPart(Model)
+    CheckForPrimaryPart(Model)
 
     AnchorPoint.CFrame = Model.PrimaryPart.CFrame
 end
 
 --// Clicking Plugin Button
 OpenGUIButton.Click:Connect(function()
-    if CullingGui.Parent == CoreGUI then
+    if CullingGui.Parent == CoreGui then
         CullingGui.Parent = PluginFolder
     else
-        CullingGui.Parent = CoreGUI
+        CullingGui.Parent = CoreGui
     end
 end)
 
@@ -148,7 +145,7 @@ AddToModelStorageButton.MouseButton1Click:Connect(function()
             if not ModelAlreadyExists then
                 local ModelClone = Model:Clone()
                 
-                CheckModelHasPrimaryPart(ModelClone)
+                CheckForPrimaryPart(ModelClone)
                 ModelClone.Parent = ModelStorage
             end
         else
@@ -161,6 +158,8 @@ AddToModelStorageButton.MouseButton1Click:Connect(function()
     else
         OutputText("Partial success - some non-models were selected and the following instances were not moved into ModelStorage: ".. ErrorString)
     end
+
+    ChangeHistoryService:SetWaypoint("Added models to ModelStorage")
 end)
 
 CullInButton.MouseButton1Click:Connect(function()
@@ -169,21 +168,21 @@ CullInButton.MouseButton1Click:Connect(function()
     end
 
     for _, AnchorPoint in pairs (AnchorPoints:GetChildren()) do
-        if string.sub(AnchorPoint.Name, 1, AnchorPointPrefixLength) == AnchorPointPrefix then
-            local AssociatedModelName = GetTrueName(AnchorPoint.Name)
+        local AssociatedModelName = AnchorPoint.Name
 
-            local Model = ModelStorage:FindFirstChild(AssociatedModelName)
+        local Model = ModelStorage:FindFirstChild(AssociatedModelName)
 
-            if Model then
-                CheckModelHasPrimaryPart(Model)
-                
-                local ModelToCull: Model = Model:Clone()--// For handy syntax autocomplete
+        if Model then
+            CheckForPrimaryPart(Model)
+            
+            local ModelToCull: Model = Model:Clone()--// For handy syntax autocomplete
 
-                ModelToCull:SetPrimaryPartCFrame(AnchorPoint.CFrame)
-                ModelToCull.Parent = CulledObjects
-            end
+            ModelToCull:SetPrimaryPartCFrame(AnchorPoint.CFrame)
+            ModelToCull.Parent = CulledObjects
         end
     end
+
+    ChangeHistoryService:SetWaypoint("Culled in all objects that had models in ModelStorage")
 end)
 
 CullOutButton.MouseButton1Click:Connect(function()
@@ -202,6 +201,8 @@ CullOutButton.MouseButton1Click:Connect(function()
             Model.Parent = ModelStorage
         end
     end
+
+    ChangeHistoryService:SetWaypoint("Culled out all objects that had models in ModelStorage")
 end)
 
 SetAnchorPointButton.MouseButton1Click:Connect(function()
@@ -226,6 +227,8 @@ SetAnchorPointButton.MouseButton1Click:Connect(function()
     else
         OutputText("Partial success - some non-models were selected and anchor points were not created for the following instances: ".. ErrorString)
     end
+
+    ChangeHistoryService:SetWaypoint("Added anchor points")
 end)
 
 --// Hint hovers (in)
@@ -269,3 +272,13 @@ end)
 SetAnchorPointButton.MouseLeave:Connect(function()
     HintFrame.Visible = false
 end)
+
+--// Start up code in case I forgot to enable or the old one is still there
+CullingGui.Enabled = true
+
+local OldCullingGui = CoreGui:FindFirstChild("CullingGui")
+
+if OldCullingGui then
+    OldCullingGui:Destroy()
+    print("Silly goose - don't forget to untoggle the gui when updating it!")
+end

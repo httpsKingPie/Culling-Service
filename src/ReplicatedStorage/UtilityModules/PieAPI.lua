@@ -1,4 +1,6 @@
+local GroupService = game:GetService("GroupService") --// Apparently less prone to errors per https://devforum.roblox.com/t/player-getrankingroup-is-inaccurate-causing-anti-cheat-to-call-false-positives/742456/4?u=https_kingpie
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
 local module = {}
 
@@ -12,12 +14,30 @@ function module:CheckNumber(Input)
 	end
 end
 
+function module:ValidateCurrentRuntimeEnvironment(RunEnvironment: string)
+    if RunEnvironment == "Client" then
+        if RunService:IsClient() then
+            return true
+        end
+
+        warn("Attempted to access Client Runtime from the Server")
+        return false
+    elseif RunEnvironment == "Server" then
+        if RunService:IsServer() then
+            return true
+        end
+
+        warn("Attempted to access Server Runtime from the Client")
+        return false
+    end
+end
+
 function module:Round(Number,NumberOfDecimalPlaces)
 	local Multiple = 10^(NumberOfDecimalPlaces or 0)
 	return math.floor(Number * Multiple + 0.5) / Multiple
 end
 
-function module:RemoveNumbers(String)
+function module:RemoveNumbers(String: string)
 	return string.gsub(String, "[^a-zA-Z]", "") 
 end
 
@@ -73,6 +93,73 @@ function module:Weld(Part1, Part2)
 	Weld.Part1 = Part2
 end
 
+--// Less error prone method of detecting if player is in a group
+function module.PlayerIsInGroup(Player: Player, GroupId: number)
+	local PlayerGroups
+
+    local Success, ErrorMessage = pcall(function()
+        PlayerGroups = GroupService:GetGroupsAsync(Player.UserId)
+    end)
+
+	if not Success then
+		warn("HTTP error loading player groups")
+		return
+	end
+
+	for _, GroupInformation in pairs (PlayerGroups) do
+        if GroupInformation.Id == GroupId then
+            return true
+        end
+    end
+
+	return false
+end
+
+--// Less error prone way of getting a player's rank in a group
+function module:PlayerGetRankInGroup(Player: Player, GroupId: number)
+	local PlayerGroups
+
+    local Success, ErrorMessage = pcall(function()
+        PlayerGroups = GroupService:GetGroupsAsync(Player.UserId)
+    end)
+
+	if not Success then
+		warn("HTTP error loading player groups")
+		return
+	end
+
+	for _, GroupInformation in pairs (PlayerGroups) do
+        if GroupInformation.Id == GroupId then
+            return GroupInformation.Rank
+        end
+    end
+
+	return 0
+end
+
+--// Less error prone way of getting a player's role in a group
+function module:PlayerGetRoleInGroup(Player: Player, GroupId: number)
+	local PlayerGroups
+
+    local Success, ErrorMessage = pcall(function()
+        PlayerGroups = GroupService:GetGroupsAsync(Player.UserId)
+    end)
+
+	if not Success then
+		warn("HTTP error loading player groups")
+		return
+	end
+
+	for _, GroupInformation in pairs (PlayerGroups) do
+        if GroupInformation.Id == GroupId then
+            return GroupInformation.Role
+        end
+    end
+
+	return "Guest"
+end
+
+--// Alternative to PlayerAdded the affects players already in the game
 function module.PlayerAdded(BoundFunction, ...)
 	local Args = {...}
 	
@@ -92,8 +179,7 @@ function module.PlayerAdded(BoundFunction, ...)
 	end
 end
 
---// Just use regular PlayerRemoving - there's no way to really improve that one (that I know of atm)
-
+--// Alternative to Player.CharacterAdded which affects characters already loaded in
 function module.CharacterAdded(Player, BoundFunction, ...)
 	local Args = {...}
 	
