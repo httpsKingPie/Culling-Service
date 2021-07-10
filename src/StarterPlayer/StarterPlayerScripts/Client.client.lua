@@ -4,4 +4,4 @@ local Services = ReplicatedStorage:WaitForChild("Services")
 
 local CullingService = require(Services:WaitForChild("CullingService"))
 
-CullingService:Initialize()
+CullingService.Initialize()

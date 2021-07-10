@@ -10,7 +10,7 @@ local module = {
 
     ["Paused"] = false, --// Whether the CullingService is paused, defaults to false.  This setting can be changed via the :Pause and :Resume functions
 
-    ["Region Length"] = 300, --// This is an invisible cube
+    ["Region Length"] = 100, --// This is an invisible cube
     
     ["WaitTime"] = .5,
 }

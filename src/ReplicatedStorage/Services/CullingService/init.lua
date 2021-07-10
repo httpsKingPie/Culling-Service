@@ -15,9 +15,12 @@ local NonCulledObjects = ReplicatedStorage:WaitForChild("NonCulledObjects")
 local AnchorPoints = workspace:WaitForChild("AnchorPoints")
 local CulledObjects = workspace:WaitForChild("CulledObjects")
 
-local Settings = require(script.Settings)
+local RegionHandling = require(script:WaitForChild("RegionHandling"))
+local Settings = require(script:WaitForChild("Settings"))
 
 local LocalPlayer = Players.LocalPlayer
+
+local CurrentRegionName: string --// Index of the table
 
 local Initialized = false
 
@@ -33,94 +36,12 @@ local module = {
     ["CurrentCulledInModels"] = {}, --// Numeric table holding all currently culled in models (indexes correlated to CurrentCulledInRanges)
     ["CurrentCulledInRanges"] = {}, --// Numeric table holding all currently culled in ranges (indexes correlated to CurrentCulledInModels)
     ["NonCulledObjectCorrelations"] = {}, --// A dictionary of [Model] = Folder of Other Ranges
-
-    ["Regions"] = {},
 }
 
---// Region shaping
-local function GetBoundingBox(Model: Model) --// Credits to XAXA (this function is soooooo useful) (https://devforum.roblox.com/t/how-does-roblox-calculate-the-bounding-boxes-on-models-getextentssize/216581/8)
-    local ModelDescendants = Model:GetDescendants()
-
-	local Orientation = CFrame.new()
-	
-	local abs = math.abs
-	local Infinity = math.huge
-
-	local MinimumX, MinimumY, MinimumZ = Infinity, Infinity, Infinity
-	local MaximumX, MaximumY, MaximumZ = -Infinity, -Infinity, -Infinity
-
-	for _, BasePart in pairs(ModelDescendants) do
-		if BasePart:IsA("BasePart") and not BasePart:IsA("Terrain") then
-			local BasePartCFrame = BasePart.CFrame
-			BasePartCFrame = Orientation:ToObjectSpace(BasePartCFrame)
-
-			local Size = BasePart.Size
-			local SizeX, SizeY, SizeZ = Size.X, Size.Y, Size.Z
-
-			local X, Y, Z, R00, R01, R02, R10, R11, R12, R20, R21, R22 = BasePartCFrame:GetComponents()
-
-			local WorldSpaceX = 0.5 * (abs(R00) * SizeX + abs(R01) * SizeY + abs(R02) * SizeZ)
-			local WorldSpaceY = 0.5 * (abs(R10) * SizeX + abs(R11) * SizeY + abs(R12) * SizeZ)
-			local WorldSpaceZ = 0.5 * (abs(R20) * SizeX + abs(R21) * SizeY + abs(R22) * SizeZ)
-
-			if MinimumX > X - WorldSpaceX then
-				MinimumX = X - WorldSpaceX
-			end
-
-			if MinimumY > Y - WorldSpaceY then
-				MinimumY = Y - WorldSpaceY
-			end
-
-			if MinimumZ > Z - WorldSpaceZ then
-				MinimumZ = Z - WorldSpaceZ
-			end
-
-			if MaximumX < X + WorldSpaceX then
-				MaximumX = X + WorldSpaceX
-			end
-
-			if MaximumY < Y + WorldSpaceY then
-				MaximumY = Y + WorldSpaceY
-			end
-
-			if MaximumZ < Z + WorldSpaceZ then
-				MaximumZ = Z + WorldSpaceZ
-			end
-		end
-	end
-
-	local ObjectMinimum, ObjectMaximum = Vector3.new(MinimumX, MinimumY, MinimumZ), Vector3.new(MaximumX, MaximumY, MaximumZ)
-	local ObjectMiddle = (ObjectMaximum+ObjectMinimum)/2
-	local WorldCFrame = Orientation - Orientation.p + Orientation:PointToWorldSpace(ObjectMiddle)
-	local Size = (ObjectMaximum-ObjectMinimum)
-
-	return WorldCFrame, Size
-end
-
 --[[
-    Process is to do this with an actual part, and then remove the part and do this invisible with just numbers
+    Return functions
 
-    Don't need to actually make this super complex (with division), just loop and cut a sliver of it
-    Imagine a lawnmower.  Imagine a lawn that is the shape of a cube.  You mow it going down until you hit the end.  You do the same thing over and over again.  Since it's 3D space, go up once you finish each bit.  Yay for loops.
-]]
-local function DivideBoundingBox()
-
-end
-
-local function GenerateCullingRegions()
-    local Part = Instance.new("Part")
-
-    local PartCFrame, PartSize = GetBoundingBox(workspace)
-
-    Part.CFrame = PartCFrame
-    Part.Size = PartSize
-
-    Part.Parent = workspace
-end
-
---// Return functions
-
---[[
+    These functions return handy things like the model associated with an Anchor Point or the Anchor Points within a certain range
     For a given anchor point, returns the Model, NonCulledObjects for that model, and table containing the current culled in ranges for that point
 
     * Only use after a model has been fully processed with ProcessCullIn
@@ -137,12 +58,12 @@ end
 
 --// Returns all anchor points in range and their distance from the origin position
 local function GetAnchorPointsInRange(OriginPosition: Vector3, SearchRadius: number)
-    local AllAnchorPoints = AnchorPoints:GetChildren()
-
     local AnchorPointsInRange = {}
     local AnchorPointDistances = {}
 
-    for _, AnchorPoint in pairs (AllAnchorPoints) do
+    local AllTrackedAnchorPoints = RegionHandling:ReturnTrackedAnchorPoints()
+
+    for _, AnchorPoint in pairs (AllTrackedAnchorPoints) do
         local Distance = (OriginPosition - AnchorPoint.Position).Magnitude
 
         if Distance <= SearchRadius then
@@ -154,9 +75,29 @@ local function GetAnchorPointsInRange(OriginPosition: Vector3, SearchRadius: num
     return AnchorPointsInRange, AnchorPointDistances
 end
 
---// End return functions
+--// Deprecated because OT&AM should handle this, no need to check manually
+local function GetCurrentRegion(HumanoidRootPart: BasePart)
+    --// Credits https://devforum.roblox.com/t/how-do-i-get-a-player-from-a-zone/464473/7
+    local function CheckInsideRegion(PositionToCheck, BoundingBoxCFrame, BoundingBoxSize)
+        local BBVector3 = BoundingBoxCFrame:PointToObjectSpace(PositionToCheck)
+        return (math.abs(BBVector3.X) <= BoundingBoxSize.X / 2)
+            and (math.abs(BBVector3.Y) <= BoundingBoxSize.Y / 2)
+            and (math.abs(BBVector3.Z) <= BoundingBoxSize.Z / 2)
+    end
 
---// Check functions
+    for RegionName, RegionData in pairs (module["Regions"]) do
+        if CheckInsideRegion(HumanoidRootPart, RegionData["Region Part"].CFrame, RegionData["Region Part"].Size) then
+            CurrentRegionName = RegionName
+            return
+        end
+    end
+end
+
+--[[
+    Check functions
+
+    Validating stuff xp
+]]
 
 --// Checks if a model has a PrimaryPart (i.e. is ready to be culled)
 local function CheckForPrimaryPart(Model: Model)
@@ -201,8 +142,6 @@ local function CheckIfRangeIsCulledIn(AnchorPoint: BasePart, RangeName: string)
 
     return false
 end
-
---// End check functions
 
 --// Returns whether something is in distance
 local function InDistance(ComaprisonNumber, MaximumBound)
@@ -360,9 +299,11 @@ local function ProcessCullOut(DistanceFolder: Folder, AnchorPoint: BasePart)
     end
 end
 
---// End Brain Functions
+--[[
+    Culling Service functions
 
---// CullingService functions (super basic)
+    I.e. the ones designed to be called
+]]
 
 function module:Resume()
     module["Paused"] = false
@@ -372,122 +313,130 @@ function module:Pause()
     module["Paused"] = true
 end
 
-function module:Initialize()
-    if not Initialized then
+function module.Initialize()
+    --// Validate this is being run on the client
+    if not PieAPI:ValidateCurrentRuntimeEnvironment("Client") then
+        return
+    end
 
-        --// Validate this is being run on the client
-        if not PieAPI:ValidateCurrentRuntimeEnvironment("Client") then
-            return
-        end
+    if Initialized then
+        return
+    end
 
-        if not LocalPlayer then
-            warn("LocalPlayer not found")
-            return
-        end
+    Initialized = true
 
-        Initialized = true
+    local HumanoidRootPart --// Used to determine whether the player is alive - we don't want to have culling change when the player dies (ex: imagine if the player's rootpart gets flung really fast)
 
-        local HumanoidRootPart --// Used to determine whether the player is alive - we don't want to have culling change when the player dies (ex: imagine if the player's rootpart gets flung really fast)
+    --// Handle deaths
+    PieAPI.CharacterAdded(LocalPlayer, function(Character)
+        HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
 
-        --// Handle deaths
-        PieAPI.CharacterAdded(LocalPlayer, function(Character)
-            HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+        local Humanoid = Character:WaitForChild("Humanoid")
+        
+        local Connection
 
-            local Humanoid = Character:WaitForChild("Humanoid")
-
-            Humanoid.Died:Connect(function()
-                HumanoidRootPart = nil
-            end)
+        Connection = Humanoid.Died:Connect(function()
+            HumanoidRootPart = nil
+            Connection:Disconnect()
         end)
 
-        --// Actual culling portion
-        while true do
-            wait(Settings["WaitTime"])
-            
-            if not Settings["Paused"] and HumanoidRootPart then --// If not paused and the player is alive
-                print("Scanning")
+        --GetCurrentRegion(HumanoidRootPart)
+    end)
 
-                --// Search for all nodes at the furthest distances (long)
-                local AnchorPointsInRadius, Distances = GetAnchorPointsInRange(HumanoidRootPart.Position, Settings["Distances"]["Search Radius"])
+    --// Divide up the map into internal regions
+    RegionHandling:GenerateInternalRegions()
 
-                for Index, AnchorPoint in ipairs (AnchorPointsInRadius) do
-                    --// Model that will be cloned if it is being culled in
-                    local ReferenceModel = ModelStorage:FindFirstChild(AnchorPoint.Name)
+    --// Track the player entering regions
+    RegionHandling:TrackRegionChanges()
 
-                    --// Return distance folders (for short, medium, and/or long)
-                    local ShortDistanceFolder = ReferenceModel:FindFirstChild("Short")
-                    local MediumDistanceFolder = ReferenceModel:FindFirstChild("Medium")
-                    local LongDistanceFolder = ReferenceModel:FindFirstChild("Long")
+    --// Actual culling portion (the core loop)
+    while true do
+        wait(Settings["WaitTime"])
+        
+        if not Settings["Paused"] and HumanoidRootPart and CurrentRegionName then --// If not paused and the player is alive and they are currently in a culling region
+            print("Scanning")
 
-                    --// Tells whether the model is culled in
-                    local ModelCulledIn = module["AnchorPointModelCorrelations"][AnchorPoint]
+            --// Search for all nodes at the furthest distances (long)
+            local AnchorPointsInRadius, Distances = GetAnchorPointsInRange(HumanoidRootPart.Position, Settings["Distances"]["Search Radius"])
 
-                    --// Return whether the model is in distance for the short, medium, or long range to be culled in
-                    local InShortDistance = InDistance(Distances[Index], Settings["Distances"]["Short"])
-                    local InMediumDistance = InDistance(Distances[Index], Settings["Distances"]["Medium"])
-                    local InLongDistance = InDistance(Distances[Index], Settings["Distances"]["Long"])
-                    
-                    --[[
-                        Evaluating whether to cull something in
+            for Index, AnchorPoint in ipairs (AnchorPointsInRadius) do
+                --// Model that will be cloned if it is being culled in
+                local ReferenceModel = ModelStorage:FindFirstChild(AnchorPoint.Name)
 
-                        Check for:
-                            1. Folder exists
-                            2. Is in distance to be culled
-                            3. Model is not already culled in AND the range for that model is not already culled in
-                    ]]
-                    local function DetermineCullIn(DistanceFolder: Folder, IsInDistance: boolean)
-                        --// 1.
-                        if not DistanceFolder then
-                            return
-                        end
+                --// Return distance folders (for short, medium, and/or long)
+                local ShortDistanceFolder = ReferenceModel:FindFirstChild("Short")
+                local MediumDistanceFolder = ReferenceModel:FindFirstChild("Medium")
+                local LongDistanceFolder = ReferenceModel:FindFirstChild("Long")
 
-                        --// 2.
-                        if not IsInDistance then
-                            return
-                        end
+                --// Tells whether the model is culled in
+                local ModelCulledIn = module["AnchorPointModelCorrelations"][AnchorPoint]
 
-                        --// 3.
-                        if ModelCulledIn and CheckIfRangeIsCulledIn(AnchorPoint, DistanceFolder.Name) then
-                            return
-                        end
+                --// Return whether the model is in distance for the short, medium, or long range to be culled in
+                local InShortDistance = InDistance(Distances[Index], Settings["Distances"]["Short"])
+                local InMediumDistance = InDistance(Distances[Index], Settings["Distances"]["Medium"])
+                local InLongDistance = InDistance(Distances[Index], Settings["Distances"]["Long"])
+                
+                --[[
+                    Evaluating whether to cull something in
 
-                        ProcessCullIn(DistanceFolder, AnchorPoint) --// Cull it in
+                    Check for:
+                        1. Folder exists
+                        2. Is in distance to be culled
+                        3. Model is not already culled in AND the range for that model is not already culled in
+                ]]
+
+                local function DetermineCullIn(DistanceFolder: Folder, IsInDistance: boolean)
+                    --// 1.
+                    if not DistanceFolder then
+                        return
                     end
 
-                    --[[
-                        Evaluating whether to remove a range
-
-                        Check for:
-                            1. Folder exists
-                            2. Is not in distance to be culled AND the range for that model is already culled
-                    ]]
-
-                    local function DetermineCullOut(DistanceFolder: Folder, IsInDistance: boolean)
-                        local RangeCulledIn = CheckIfRangeIsCulledIn(AnchorPoint, DistanceFolder.Name)
-
-                        --// 1.
-                        if not DistanceFolder then
-                            return
-                        end
-
-                        --// 2.
-                        if not IsInDistance and RangeCulledIn then
-                            ProcessCullOut(DistanceFolder, AnchorPoint)
-                            return
-                        end
+                    --// 2.
+                    if not IsInDistance then
+                        return
                     end
 
-                    --// Determines whether to Cull in short, medium, and long ranges
-                    DetermineCullIn(ShortDistanceFolder, InShortDistance)
-                    DetermineCullIn(MediumDistanceFolder, InMediumDistance)
-                    DetermineCullIn(LongDistanceFolder, InLongDistance)
-
-                    --// Determines whether to cull out short, medium, and long ranges
-                    if ModelCulledIn then
-                        DetermineCullOut(ShortDistanceFolder, InShortDistance)
-                        DetermineCullOut(MediumDistanceFolder, InMediumDistance)
-                        DetermineCullOut(LongDistanceFolder, InLongDistance)
+                    --// 3.
+                    if ModelCulledIn and CheckIfRangeIsCulledIn(AnchorPoint, DistanceFolder.Name) then
+                        return
                     end
+
+                    ProcessCullIn(DistanceFolder, AnchorPoint) --// Cull it in
+                end
+
+                --[[
+                    Evaluating whether to remove a range
+
+                    Check for:
+                        1. Folder exists
+                        2. Is not in distance to be culled AND the range for that model is already culled
+                ]]
+
+                local function DetermineCullOut(DistanceFolder: Folder, IsInDistance: boolean)
+                    local RangeCulledIn = CheckIfRangeIsCulledIn(AnchorPoint, DistanceFolder.Name)
+
+                    --// 1.
+                    if not DistanceFolder then
+                        return
+                    end
+
+                    --// 2.
+                    if not IsInDistance and RangeCulledIn then
+                        ProcessCullOut(DistanceFolder, AnchorPoint)
+                        return
+                    end
+                end
+
+                --// Determines whether to Cull in short, medium, and long ranges
+                DetermineCullIn(ShortDistanceFolder, InShortDistance)
+                DetermineCullIn(MediumDistanceFolder, InMediumDistance)
+                DetermineCullIn(LongDistanceFolder, InLongDistance)
+
+                --// Determines whether to cull out short, medium, and long ranges
+                if ModelCulledIn then
+                    DetermineCullOut(ShortDistanceFolder, InShortDistance)
+                    DetermineCullOut(MediumDistanceFolder, InMediumDistance)
+                    DetermineCullOut(LongDistanceFolder, InLongDistance)
                 end
             end
         end
