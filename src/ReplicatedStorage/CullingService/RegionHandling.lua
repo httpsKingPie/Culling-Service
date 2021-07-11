@@ -1,8 +1,6 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local UtilityModules = ReplicatedStorage:WaitForChild("UtilityModules")
-
-local OTAM = require(UtilityModules:WaitForChild("OT&AM"))
+local OTAM = require(ReplicatedStorage:WaitForChild("OT&AM"))
 
 local CullingService = script.Parent
 local Settings = require(CullingService:WaitForChild("Settings"))
@@ -155,7 +153,6 @@ local function ReturnRegionsToTrack()
 
         --// It's okay if the region doesn't exist, because some regions (especially in the y direction won't often have stuff)
         if module["Regions"][AdjacentRegionName] then
-            module["Regions"][AdjacentRegionName]["Region Part"].Transparency = .8
             table.insert(RegionsToTrack, AdjacentRegionName)
         end
     end

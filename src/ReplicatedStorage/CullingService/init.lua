@@ -1,26 +1,22 @@
 --[[
     This runs exclusively on the client
 
-    Run it with CullingService:Initialize()
+    Run it with CullingService.Initialize()
 ]]
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local UtilityModules = ReplicatedStorage:WaitForChild("UtilityModules")
-local PieAPI = require(UtilityModules:WaitForChild("PieAPI"))
+local RunService = game:GetService("RunService")
 
 local ModelStorage = ReplicatedStorage:WaitForChild("ModelStorage")
 local NonCulledObjects = ReplicatedStorage:WaitForChild("NonCulledObjects")
 
-local AnchorPoints = workspace:WaitForChild("AnchorPoints")
 local CulledObjects = workspace:WaitForChild("CulledObjects")
 
 local RegionHandling = require(script:WaitForChild("RegionHandling"))
 local Settings = require(script:WaitForChild("Settings"))
 
 local LocalPlayer = Players.LocalPlayer
-
-local CurrentRegionName: string --// Index of the table
 
 local Initialized = false
 
@@ -46,6 +42,32 @@ local module = {
 
     * Only use after a model has been fully processed with ProcessCullIn
 ]]
+
+local function CharacterAdded(Player, BoundFunction, ...)
+	local Args = {...}
+	
+	if type(Player) ~= "userdata" or Player:IsA("Player") == false or Player.Parent == nil then
+		warn("Invalid player instance provided as first argument")
+		return
+	end
+	
+	if type(BoundFunction) ~= "function" then
+		warn("Pass a function as the second argument")
+		return
+	end
+	
+	if Player.Character then
+		BoundFunction(Player.Character, table.unpack(Args))
+		
+		Player.CharacterAdded:Connect(function(Character)
+			BoundFunction(Character, table.unpack(Args))
+		end)
+	end
+	
+	Player.CharacterAdded:Connect(function(Character)
+		BoundFunction(Character, table.unpack(Args))
+	end)
+end
 
 local function ReturnModelValues(AnchorPoint: BasePart)
     local Model: Model = module["AnchorPointModelCorrelations"][AnchorPoint]
@@ -73,24 +95,6 @@ local function GetAnchorPointsInRange(OriginPosition: Vector3, SearchRadius: num
     end
 
     return AnchorPointsInRange, AnchorPointDistances
-end
-
---// Deprecated because OT&AM should handle this, no need to check manually
-local function GetCurrentRegion(HumanoidRootPart: BasePart)
-    --// Credits https://devforum.roblox.com/t/how-do-i-get-a-player-from-a-zone/464473/7
-    local function CheckInsideRegion(PositionToCheck, BoundingBoxCFrame, BoundingBoxSize)
-        local BBVector3 = BoundingBoxCFrame:PointToObjectSpace(PositionToCheck)
-        return (math.abs(BBVector3.X) <= BoundingBoxSize.X / 2)
-            and (math.abs(BBVector3.Y) <= BoundingBoxSize.Y / 2)
-            and (math.abs(BBVector3.Z) <= BoundingBoxSize.Z / 2)
-    end
-
-    for RegionName, RegionData in pairs (module["Regions"]) do
-        if CheckInsideRegion(HumanoidRootPart, RegionData["Region Part"].CFrame, RegionData["Region Part"].Size) then
-            CurrentRegionName = RegionName
-            return
-        end
-    end
 end
 
 --[[
@@ -169,14 +173,12 @@ local function CullIn(AnchorPoint: BasePart)
     local AlreadyCreated = CheckIfAlreadyCulledIn(Model)
 
     if AlreadyCreated then --// For models that have already been streamed in once and are being rest
-        print("Already created")
         for _, Folder in pairs(ModelNonCulledObjects:GetChildren()) do
             if table.find(RangeTable, Folder.Name) then
                 Folder.Parent = Model
             end
         end
     else
-        print("Not already created")
         Model:SetPrimaryPartCFrame(AnchorPoint.CFrame)
 
         for _, Folder in pairs (Model:GetChildren()) do --// Each model should be sorted into the "Short", "Medium", and "Long" sub-folders
@@ -315,7 +317,8 @@ end
 
 function module.Initialize()
     --// Validate this is being run on the client
-    if not PieAPI:ValidateCurrentRuntimeEnvironment("Client") then
+    if not RunService:IsClient() then
+        warn("Run CullingService from the client, not the server")
         return
     end
 
@@ -328,7 +331,7 @@ function module.Initialize()
     local HumanoidRootPart --// Used to determine whether the player is alive - we don't want to have culling change when the player dies (ex: imagine if the player's rootpart gets flung really fast)
 
     --// Handle deaths
-    PieAPI.CharacterAdded(LocalPlayer, function(Character)
+    CharacterAdded(LocalPlayer, function(Character)
         HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
 
         local Humanoid = Character:WaitForChild("Humanoid")
@@ -353,9 +356,7 @@ function module.Initialize()
     while true do
         wait(Settings["WaitTime"])
         
-        if not Settings["Paused"] and HumanoidRootPart and CurrentRegionName then --// If not paused and the player is alive and they are currently in a culling region
-            print("Scanning")
-
+        if not Settings["Paused"] and HumanoidRootPart then --// If not paused and the player is alive and they are currently in a culling region
             --// Search for all nodes at the furthest distances (long)
             local AnchorPointsInRadius, Distances = GetAnchorPointsInRange(HumanoidRootPart.Position, Settings["Distances"]["Search Radius"])
 
@@ -413,12 +414,12 @@ function module.Initialize()
                 ]]
 
                 local function DetermineCullOut(DistanceFolder: Folder, IsInDistance: boolean)
-                    local RangeCulledIn = CheckIfRangeIsCulledIn(AnchorPoint, DistanceFolder.Name)
-
                     --// 1.
                     if not DistanceFolder then
                         return
                     end
+
+                    local RangeCulledIn = CheckIfRangeIsCulledIn(AnchorPoint, DistanceFolder.Name)
 
                     --// 2.
                     if not IsInDistance and RangeCulledIn then

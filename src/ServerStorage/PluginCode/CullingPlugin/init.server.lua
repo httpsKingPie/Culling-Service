@@ -4,12 +4,6 @@
 local CoreGui = game:GetService("CoreGui")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
---// Folder definitions
-local AnchorPoints = workspace:FindFirstChild("AnchorPoints") --// Folder holding all anchor points
-local ModelStorage = ReplicatedStorage:FindFirstChild("ModelStorage") --// Stores all models to be culled
-local CulledObjects = workspace:FindFirstChild("CulledObjects") --// Stores all current culled objects
-local NonCulledObjects = ReplicatedStorage:FindFirstChild("NonCulledObjects") --// Not used in the context of this plugin, but basically used for ranges
-
 --// GUI definitions
 local PluginFolder = script.Parent
 
@@ -40,28 +34,37 @@ local Settings = require(script:WaitForChild("Settings"))
 local UIVisuals = require(script:WaitForChild("UIVisuals"))
 
 local function InitCheck()
-    AnchorPoints = workspace:FindFirstChild("AnchorPoints")
-    CulledObjects = workspace:FindFirstChild("CulledObjects")
-    ModelStorage = ReplicatedStorage:FindFirstChild("ModelStorage")
-    NonCulledObjects = ReplicatedStorage:FindFirstChild("NonCulledObjects")
+    local AnchorPoints = workspace:FindFirstChild("AnchorPoints")
+    local CulledObjects = workspace:FindFirstChild("CulledObjects")
+    local CullingRegions = workspace:FindFirstChild("CullingRegions")
+    local ModelStorage = ReplicatedStorage:FindFirstChild("ModelStorage")
+    local NonCulledObjects = ReplicatedStorage:FindFirstChild("NonCulledObjects")
+
+    local ErrorTextReplicatedStorage = " (folder) not found in ReplicatedStorage; Culling plugin failed to initialize.  Please fix this error and try again."
+    local ErrorTextWorkspace = " (folder) not found in workspace; Culling plugin failed to initialize.  Please fix this error and try again."
 
     if not AnchorPoints then
-        Culling.OutputText("AnchorPoints (folder) not found in workspace; Culling plugin failed to initialize.  Please fix this error and try again.")
+        Culling.OutputText("AnchorPoints".. ErrorTextWorkspace)
         return
     end
 
     if not CulledObjects then
-        Culling.OutputText("CulledObjects (folder) not found in workspace; Culling plugin failed to initialize.  Please fix this error and try again.")
+        Culling.OutputText("CulledObjects".. ErrorTextWorkspace)
+        return
+    end
+
+    if not CullingRegions then
+        Culling.OutputText("CullingRegions" .. ErrorTextWorkspace)
         return
     end
 
     if not ModelStorage then
-        Culling.OutputText("ModelStorage (folder) not found in ReplicatedStorage; Culling plugin failed to initialize.  Please fix this error and try again.")
+        Culling.OutputText("ModelStorage".. ErrorTextReplicatedStorage)
         return
     end
 
     if not NonCulledObjects then
-        Culling.OutputText("NonCulledObjects (folder) not found in ReplicatedStorage; Culling plugin failed to initialize.  Please fix this error and try again.")
+        Culling.OutputText("NonCulledObjects" .. ErrorTextReplicatedStorage)
         return
     end
 

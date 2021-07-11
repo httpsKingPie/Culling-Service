@@ -101,6 +101,7 @@ local function CheckForPrimaryPart(Model: Model)
     local Primary_Part = Instance.new("Part")
     Primary_Part.Anchored = true
     Primary_Part.Name = "ModelPrimaryPart"
+    Primary_Part.Transparency = 1
     Primary_Part.Size = Vector3.new(.1, .1, .1)
     Primary_Part.CFrame = Model:GetModelCFrame() --// Yes, it's deprecated - yes this is the best thing to use in this case, because it puts it exactly where the node is
     Primary_Part.Parent = Model
@@ -188,6 +189,53 @@ function module.CullOutEntireMap()
     ChangeHistoryService:SetWaypoint("Culled out all objects that had models in ModelStorage")
 end
 
+function module.CullInSelection()
+    local SelectedObjects = Selection:Get()
+
+    local ErrorString = ""
+
+    for _, AnchorPoint in pairs (SelectedObjects) do
+        if AnchorPoint.Parent == AnchorPoints then
+            local Model = ModelStorage:FindFirstChild(AnchorPoint.Name)
+
+            if Model then
+                CheckForPrimaryPart(Model)
+
+                local ModelToCull: Model = Model:Clone()
+
+                ModelToCull:SetPrimaryPartCFrame(AnchorPoint.CFrame)
+                ModelToCull.Parent = CulledObjects
+            end
+        else
+            ErrorString = ErrorString.. AnchorPoint.Name.. ";"
+        end
+    end
+
+    if ErrorString == "" then
+        module.OutputText("Success - culled in all objects for anchor points")
+    else
+        module.OutputText("Partial success - some non-anchor points were selected or models were not found for the following instances: ".. ErrorString)
+    end
+
+    ChangeHistoryService:SetWaypoint("Culled in for selection")
+end
+
+function module.CullOutSelection()
+    local SelectedObjects = Selection:Get()
+
+    for _, Model in pairs (SelectedObjects) do
+        local AlreadyInModelStorage = ModelStorage:FindFirstChild(Model.Name)
+
+        if AlreadyInModelStorage then
+            Model:Destroy()
+        else
+            Model.Parent = ModelStorage
+        end
+    end
+
+    ChangeHistoryService:SetWaypoint("Culled out all objects that had models in ModelStorage")
+end
+
 function module.GenerateAnchorPointsForSelection()
     local SelectedObjects = Selection:Get()
 
@@ -218,7 +266,7 @@ function module.VisualizeInternalRegions()
     local function QuickPart(PartSize: Vector3, PartCFrame: CFrame, OptionalPosition: Vector3)
         local QP = Instance.new("Part")
         QP.Anchored = true
-        QP.Transparency = .9
+        QP.Transparency = 1
         QP.Color = Color3.fromRGB(math.random(0, 255), math.random(0, 255), math.random(0, 255))
         QP.Size = PartSize
         QP.CFrame = PartCFrame

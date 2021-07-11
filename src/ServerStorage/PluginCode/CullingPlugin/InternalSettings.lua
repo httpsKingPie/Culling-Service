@@ -9,6 +9,7 @@ local module = {
         ["Hint Text"] = [[
 This will add the model to the ModelStorage folder, provided the model does not already exist.
 Very useful to use after setting anchor points
+If an anchor point has been set - the original model can now be deleted
 ]]
     },
     {
@@ -25,6 +26,20 @@ This is useful for previewing the current state of the map
         ["Bound Function"] = Culling.CullOutEntireMap,
         ["Hint Text"] = [[
 This will cull out all (i.e. destroy in this context) objects located in Workspace.CulledObjects
+]]
+    },
+    {
+        ["Text"] = "Cull In Selection",
+        ["Bound Function"] = Culling.CullInSelection,
+        ["Hint Text"] = [[
+This will cull in all models for the selected anchor points
+]]
+    },
+    {
+        ["Text"] = "Cull Out Selection",
+        ["Bound Function"] = Culling.CullOutSelection,
+        ["Hint Text"] = [[
+This will cull out all (i.e. destroy in this context) all selected models
 ]]
     },
     {

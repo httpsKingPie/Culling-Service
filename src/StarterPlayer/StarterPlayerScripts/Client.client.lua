@@ -1,7 +1,5 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Services = ReplicatedStorage:WaitForChild("Services")
-
-local CullingService = require(Services:WaitForChild("CullingService"))
+local CullingService = require(ReplicatedStorage:WaitForChild("CullingService"))
 
 CullingService.Initialize()
