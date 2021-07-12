@@ -18,12 +18,9 @@ local Settings = require(script:WaitForChild("Settings"))
 
 local LocalPlayer = Players.LocalPlayer
 
-local Initialized = false
+local HumanoidRootPart --// Used to determine whether the player is alive - we don't want to have culling change when the player dies (ex: imagine if the player's rootpart gets flung really fast)
 
---[[
-    Demo version will check the whole map, broadly searching every check period for whatever is within streaming distance
-    Final version should incorporate smarter check methods (ex: take note of where the player is, like what "zone" the player is, and then only search within that zone for better performance)
-]]
+local Initialized = false
 
 local module = {
     ["Paused"] = false, --// Whether Culling is paused or not (defaults to false, since culling may want to be done manually at the beginning for cutscnees, etc.)
@@ -31,17 +28,9 @@ local module = {
     ["AnchorPointModelCorrelations"] = {}, --// A dictionary of [AnchorPoint] = Model
     ["CurrentCulledInModels"] = {}, --// Numeric table holding all currently culled in models (indexes correlated to CurrentCulledInRanges)
     ["CurrentCulledInRanges"] = {}, --// Numeric table holding all currently culled in ranges (indexes correlated to CurrentCulledInModels)
+    ["ModelAnchorPointCorrelations"] = {}, --// Inverse of AnchorPointModelCorrelations, dictionary format is [Model] = AnchorPoint
     ["NonCulledObjectCorrelations"] = {}, --// A dictionary of [Model] = Folder of Other Ranges
 }
-
---[[
-    Return functions
-
-    These functions return handy things like the model associated with an Anchor Point or the Anchor Points within a certain range
-    For a given anchor point, returns the Model, NonCulledObjects for that model, and table containing the current culled in ranges for that point
-
-    * Only use after a model has been fully processed with ProcessCullIn
-]]
 
 local function CharacterAdded(Player, BoundFunction, ...)
 	local Args = {...}
@@ -67,6 +56,13 @@ local function CharacterAdded(Player, BoundFunction, ...)
 	Player.CharacterAdded:Connect(function(Character)
 		BoundFunction(Character, table.unpack(Args))
 	end)
+end
+
+local function CreateWeld(Part1, Part2)
+    local Weld = Instance.new("WeldConstraint")
+    Weld.Parent = Part1
+    Weld.Part0 = Part1
+    Weld.Part1 = Part2
 end
 
 local function ReturnModelValues(AnchorPoint: BasePart)
@@ -198,6 +194,21 @@ local function CullOut(Model: Model)
         return
     end
 
+    local WeldAnchorPoints = table.find(Settings["Welded Anchor Points"], Model.Name)
+
+    if WeldAnchorPoints then
+        for _, Child in pairs (module["ModelAnchorPointCorrelations"][Model]:GetChildren()) do
+            if Child:IsA("WeldConstraint") then
+                Child:Destroy()
+            end
+        end
+    end
+
+    local AnchorPoint = module["ModelAnchorPointCorrelations"][Model]
+
+    module.AnchorPointModelCorrelations[AnchorPoint] = nil
+    module.ModelAnchorPointCorrelations[Model] = nil
+
     Model:Destroy()
 end
 
@@ -248,8 +259,20 @@ local function ProcessCullIn(DistanceFolder: Folder, AnchorPoint: BasePart)
     else --// Means we are loading in a model from scratch
         local Model = ReferenceModel:Clone()
 
+        local WeldAnchorPoints = table.find(Settings["Welded Anchor Points"], Model.Name)
+
+        if WeldAnchorPoints then
+            for _, Descendant in pairs (Model:GetDescendants()) do
+                if Descendant:IsA("BasePart") then
+                    CreateWeld(AnchorPoint, Descendant)
+                    Descendant.Anchored = false
+                end
+            end
+        end
+
         --// Set up Anchor Point Model Correlations
         module["AnchorPointModelCorrelations"][AnchorPoint] = Model
+        module["ModelAnchorPointCorrelations"][Model] = AnchorPoint
 
         --// Set up Non Culled Object Correlations
         local NonCulledObjectStorageFolder = Instance.new("Folder")
@@ -301,58 +324,8 @@ local function ProcessCullOut(DistanceFolder: Folder, AnchorPoint: BasePart)
     end
 end
 
---[[
-    Culling Service functions
-
-    I.e. the ones designed to be called
-]]
-
-function module:Resume()
-    module["Paused"] = false
-end
-
-function module:Pause()
-    module["Paused"] = true
-end
-
-function module.Initialize()
-    --// Validate this is being run on the client
-    if not RunService:IsClient() then
-        warn("Run CullingService from the client, not the server")
-        return
-    end
-
-    if Initialized then
-        return
-    end
-
-    Initialized = true
-
-    local HumanoidRootPart --// Used to determine whether the player is alive - we don't want to have culling change when the player dies (ex: imagine if the player's rootpart gets flung really fast)
-
-    --// Handle deaths
-    CharacterAdded(LocalPlayer, function(Character)
-        HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
-
-        local Humanoid = Character:WaitForChild("Humanoid")
-        
-        local Connection
-
-        Connection = Humanoid.Died:Connect(function()
-            HumanoidRootPart = nil
-            Connection:Disconnect()
-        end)
-
-        --GetCurrentRegion(HumanoidRootPart)
-    end)
-
-    --// Divide up the map into internal regions
-    RegionHandling:GenerateInternalRegions()
-
-    --// Track the player entering regions
-    RegionHandling:TrackRegionChanges()
-
-    --// Actual culling portion (the core loop)
+--// What actually handles the culling
+local function CoreLoop()
     while true do
         wait(Settings["WaitTime"])
         
@@ -442,6 +415,59 @@ function module.Initialize()
             end
         end
     end
+end
+
+--[[
+    Culling Service functions
+
+    I.e. the ones designed to be called
+]]
+
+function module:Resume()
+    module["Paused"] = false
+end
+
+function module:Pause()
+    module["Paused"] = true
+end
+
+function module.Initialize()
+    --// Validate this is being run on the client
+    if not RunService:IsClient() then
+        warn("Run CullingService from the client, not the server")
+        return
+    end
+
+    if Initialized then
+        return
+    end
+
+    Initialized = true
+
+    --// Handle deaths
+    CharacterAdded(LocalPlayer, function(Character)
+        HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+
+        local Humanoid = Character:WaitForChild("Humanoid")
+        
+        local Connection
+
+        Connection = Humanoid.Died:Connect(function()
+            HumanoidRootPart = nil
+            Connection:Disconnect()
+        end)
+
+        --GetCurrentRegion(HumanoidRootPart)
+    end)
+
+    --// Divide up the map into internal regions
+    RegionHandling:GenerateInternalRegions()
+
+    --// Track the player entering regions
+    RegionHandling:TrackRegionChanges()
+
+    --// Actual culling portion (the core loop)
+    coroutine.wrap(CoreLoop)()
 end
 
 return module

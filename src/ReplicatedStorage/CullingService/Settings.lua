@@ -11,7 +11,15 @@ local module = {
 
     ["Region Length"] = 100, --// This is an invisible cube length.  Make sure this value is at least a third of the search radius.  Customize to your liking
     
-    ["WaitTime"] = .5,
+    ["WaitTime"] = .5, --// Determines how often CullingService checks to cull things in or out
+
+    --[[
+        Put the names of AnchorPoints/their models (should have the same name) here that you want to be welded together.
+        Useful for moving stuff
+        Format like {"ModelName1", "WhateverThisModelIsCalled", etc. and so on}
+    ]]
+    
+    ["Welded Anchor Points"] = {"WeldAnchorPointTest"}, --// What is currently here is just a dummy value, feel free to remove it
 }
 
 return module
