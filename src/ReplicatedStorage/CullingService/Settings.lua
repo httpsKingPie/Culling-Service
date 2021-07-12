@@ -4,14 +4,13 @@ local module = {
         ["Short"] = 20,
         ["Medium"] = 50,
         ["Long"] = 100,
-        ["Search Radius"] = 200, --// We search for models this far, since we may have to cull some out
     },
 
     ["Paused"] = false, --// Whether the CullingService is paused, defaults to false.  This setting can be changed via the :Pause and :Resume functions
 
     ["Region Length"] = 100, --// This is an invisible cube length.  Make sure this value is at least a third of the search radius.  Customize to your liking
     
-    ["WaitTime"] = .5, --// Determines how often CullingService checks to cull things in or out
+    ["Wait Time"] = .5, --// Determines how often CullingService checks to cull things in or out
 
     --[[
         Put the names of AnchorPoints/their models (should have the same name) here that you want to be welded together.

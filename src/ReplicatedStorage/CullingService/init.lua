@@ -75,8 +75,7 @@ local function ReturnModelValues(AnchorPoint: BasePart)
 end
 
 --// Returns all anchor points in range and their distance from the origin position
-local function GetAnchorPointsInRange(OriginPosition: Vector3, SearchRadius: number)
-    local AnchorPointsInRange = {}
+local function GetAnchorPointsInRange(OriginPosition: Vector3)
     local AnchorPointDistances = {}
 
     local AllTrackedAnchorPoints = RegionHandling:ReturnTrackedAnchorPoints()
@@ -84,13 +83,10 @@ local function GetAnchorPointsInRange(OriginPosition: Vector3, SearchRadius: num
     for _, AnchorPoint in pairs (AllTrackedAnchorPoints) do
         local Distance = (OriginPosition - AnchorPoint.Position).Magnitude
 
-        if Distance <= SearchRadius then
-            table.insert(AnchorPointsInRange, AnchorPoint)
-            table.insert(AnchorPointDistances, Distance)
-        end
+        table.insert(AnchorPointDistances, Distance)
     end
 
-    return AnchorPointsInRange, AnchorPointDistances
+    return AllTrackedAnchorPoints, AnchorPointDistances
 end
 
 --[[
@@ -327,11 +323,11 @@ end
 --// What actually handles the culling
 local function CoreLoop()
     while true do
-        wait(Settings["WaitTime"])
+        wait(Settings["Wait Time"]) --// This doesn't have to be super specific, so I'm just using the basic Roblox wait function
         
         if not Settings["Paused"] and HumanoidRootPart then --// If not paused and the player is alive and they are currently in a culling region
             --// Search for all nodes at the furthest distances (long)
-            local AnchorPointsInRadius, Distances = GetAnchorPointsInRange(HumanoidRootPart.Position, Settings["Distances"]["Search Radius"])
+            local AnchorPointsInRadius, Distances = GetAnchorPointsInRange(HumanoidRootPart.Position)
 
             for Index, AnchorPoint in ipairs (AnchorPointsInRadius) do
                 --// Model that will be cloned if it is being culled in
