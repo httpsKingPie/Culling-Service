@@ -98,7 +98,6 @@ local function CheckInsideRegion(PositionToCheck, BoundingBoxCFrame, BoundingBox
 end
 
 local function QuickPart(PartSize: Vector3, PartCFrame: CFrame, OptionalPosition: Vector3)
-    local Test = true
     local Part = Instance.new("Part")
     Part.Anchored = true
     Part.CanCollide = false
