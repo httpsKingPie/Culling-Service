@@ -98,19 +98,16 @@ local function CheckInsideRegion(PositionToCheck, BoundingBoxCFrame, BoundingBox
 end
 
 local function QuickPart(PartSize: Vector3, PartCFrame: CFrame, OptionalPosition: Vector3)
+    local Test = true
     local Part = Instance.new("Part")
     Part.Anchored = true
     Part.CanCollide = false
     Part.Transparency = 1
     Part.Size = PartSize
     Part.CFrame = PartCFrame
-    
+
     Part.Parent = CullingRegions
-    
-    if OptionalPosition then
-        Part.Position = OptionalPosition
-    end
-    
+        
     return Part
 end
 
@@ -217,12 +214,9 @@ end
 function module:GenerateInternalRegions()
     --// Basic data about the BoundingBox of the workspace
     local BoundingBoxCFrame, BoundingBoxSize = GetBoundingBox(workspace)
-    local BoundingBox = QuickPart(BoundingBoxSize, BoundingBoxCFrame)
-    local BBPosition = BoundingBox.Position
-    local BBSize = BoundingBox.Size
     
     --// Store the edge position so that regions can be sequentially created
-    local EdgePosition = BoundingBoxCFrame.Position - Vector3.new(((BBSize.X)/2) - Settings["Region Length"]/2, (BBSize.Y)/2 - Settings["Region Length"]/2, (BBSize.Z)/2 - Settings["Region Length"]/2)
+    local EdgePosition = BoundingBoxCFrame.Position - Vector3.new(((BoundingBoxSize.X)/2) - Settings["Region Length"]/2, (BoundingBoxSize.Y)/2 - Settings["Region Length"]/2, (BoundingBoxSize.Z)/2 - Settings["Region Length"]/2)
     
     --// Booleans which determine if a row has been fully checked
     local CheckedAllX = false
@@ -239,8 +233,10 @@ function module:GenerateInternalRegions()
     local MovesZ
 
     --// Generate the part for the region and store it
-    local function GenerateRegion(PartSize: Vector3, PartCFrame: CFrame, OptionalPosition: Vector3)
-        local Region = QuickPart(PartSize, PartCFrame, OptionalPosition)
+    local function GenerateRegion(PartSize: Vector3, PositionVector: Vector3)
+        --local NewCFrame = CFrame.new(OptionalPosition, OrientationVector)
+
+        local Region = QuickPart(PartSize, PositionVector)
 
         local IndexName = tostring(CurrentXIteration) .. "." .. tostring(CurrentYIteration) .. "." .. tostring(CurrentZIteration)
 
@@ -255,22 +251,22 @@ function module:GenerateInternalRegions()
         local NewPositionX
         
         local function FinalParseX()
-            GenerateRegion(Vector3.new(Settings["Region Length"], Settings["Region Length"], Settings["Region Length"]), BoundingBoxCFrame, NewPositionX)
+            GenerateRegion(Vector3.new(Settings["Region Length"], Settings["Region Length"], Settings["Region Length"]), NewPositionX)
             CheckedAllX = true --// Ends the loop, for now
             CurrentXIteration = 0
         end
         
         while not CheckedAllX do
-            NewPositionX = EdgePosition + Vector3.new(Settings["Region Length"] * CurrentXIteration, Settings["Region Length"] * CurrentYIteration, Settings["Region Length"] * CurrentZIteration)
+            NewPositionX = CFrame.new(EdgePosition + Vector3.new(Settings["Region Length"] * CurrentXIteration, Settings["Region Length"] * CurrentYIteration, Settings["Region Length"] * CurrentZIteration))
     
-            GenerateRegion(Vector3.new(Settings["Region Length"], Settings["Region Length"], Settings["Region Length"]), BoundingBoxCFrame, NewPositionX)
+            GenerateRegion(Vector3.new(Settings["Region Length"], Settings["Region Length"], Settings["Region Length"]), NewPositionX)
     
             CurrentXIteration = CurrentXIteration + 1 --// Also representative of the amount of times parsed
             
             if not MovesX then
                 --// Assign the amount of times that this should move (since it moves along a box, we don't need to calculate every time)
                 
-                if not CheckInsideRegion(NewPositionX, BoundingBoxCFrame, BoundingBoxSize) then
+                if not CheckInsideRegion(NewPositionX.Position, BoundingBoxCFrame, BoundingBoxSize) then
                     MovesX = CurrentXIteration
                     FinalParseX()
                 end
