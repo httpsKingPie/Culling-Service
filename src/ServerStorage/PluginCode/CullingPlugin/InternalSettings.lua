@@ -2,7 +2,17 @@ local Culling = require(script.Parent.Culling)
 
 local module = {
     ["Buttons"] = {
+    {
+        ["Text"] = "Auto Add Selection",
+        ["Bound Function"] = Culling.AutoMode,
+        ["Hint Text"] = [[
+This will generate anchor points
+Add (non-duplicate) models to ModelStorage
+And then cull out the models from the game
 
+Useful if setting this up for large finished parts of the map
+]]
+    },
     {
         ["Text"] = "Add Selection to Model Storage",
         ["Bound Function"] = Culling.AddSelectionToModelStorage,

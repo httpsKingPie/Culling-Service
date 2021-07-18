@@ -112,6 +112,7 @@ local function SetAnchorPoint(Model: Model)
     local AnchorPoint = Instance.new("Part")
     AnchorPoint.Size = Vector3.new(.05, .05, .05)
     AnchorPoint.Transparency = 1
+    AnchorPoint.CanTouch = false
     AnchorPoint.Anchored = true
     AnchorPoint.Name = Model.Name
     AnchorPoint.Parent = AnchorPoints
@@ -256,6 +257,12 @@ function module.GenerateAnchorPointsForSelection()
     end
 
     ChangeHistoryService:SetWaypoint("Added anchor points for selection")
+end
+
+function module.AutoMode()
+    module.GenerateAnchorPointsForSelection()
+    module.AddSelectionToModelStorage()
+    module.CullOutSelection()
 end
 
 function module.VisualizeInternalRegions()
