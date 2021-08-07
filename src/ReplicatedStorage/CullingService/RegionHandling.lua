@@ -15,9 +15,19 @@ local CullingRegions = workspace:WaitForChild("CullingRegions")
     Any region with a 0 means that it is the first of the row (so it probably doesn't have any neighbors)
     The actual value of the table includes all anchor points within the region
 
-    Stores like [XX.XX.XX] = {
-        ["Region Part"] = Region Part
-        ["Anchor Points"] = {} simple table
+    If UseParts is true it looks like
+
+    [XX.XX.XX] = {
+        ["Region Part"] = Region Part,
+        ["Anchor Points"] = {} simple table,
+    }
+
+    If UseParts is false it looks like
+
+    [XX.XX.XX] = {
+        ["Region Size"] = Vector3,
+        ["Region CFrame"] = CFrame,
+        ["Anchor Points"] = {} simple table,
     }
 ]]
 
@@ -97,7 +107,7 @@ local function CheckInsideRegion(PositionToCheck, BoundingBoxCFrame, BoundingBox
 		and (math.abs(BBVector3.Z) <= BoundingBoxSize.Z / 2)
 end
 
-local function QuickPart(PartSize: Vector3, PartCFrame: CFrame, OptionalPosition: Vector3)
+local function QuickPart(PartSize: Vector3, PartCFrame: CFrame)
     local Part = Instance.new("Part")
     Part.Anchored = true
     Part.CanCollide = false
@@ -121,9 +131,18 @@ local function SortAnchorPointsIntoRegions()
     --// Optimize this later, just not sure if there's a better method
     for _, RegionData in pairs (module["Regions"]) do
         for Index, AnchorPoint in pairs (AnchorPointsToCheck) do
-            if CheckInsideRegion(AnchorPoint.Position, RegionData["Region Part"].CFrame, RegionData["Region Part"].Size) then
+            local InsideRegion: boolean
+
+            if Settings["Use Parts"] == true then
+                InsideRegion = CheckInsideRegion(AnchorPoint.Position, RegionData["Region Part"].CFrame, RegionData["Region Part"].Size)
+            elseif Settings["Use Parts"] == false then
+                InsideRegion = CheckInsideRegion(AnchorPoint.Position, RegionData["Region CFrame"], RegionData["Region Size"])
+            end
+
+            if InsideRegion then
+                --// Theoretically, it will get faster and faster as it loops through, since less entries
                 table.insert(RegionData["Anchor Points"], AnchorPoint)
-                table.remove(AnchorPointsToCheck, Index) --// Theoretically it will get faster and faster as it loops through, since less entries
+                table.remove(AnchorPointsToCheck, Index)
             end
         end
     end
@@ -232,18 +251,24 @@ function module:GenerateInternalRegions()
     local MovesZ
 
     --// Generate the part for the region and store it
-    local function GenerateRegion(PartSize: Vector3, PositionVector: Vector3)
-        --local NewCFrame = CFrame.new(OptionalPosition, OrientationVector)
-
-        local Region = QuickPart(PartSize, PositionVector)
-
+    local function GenerateRegion(RegionSize: Vector3, RegionCFrame: CFrame)
         local IndexName = tostring(CurrentXIteration) .. "." .. tostring(CurrentYIteration) .. "." .. tostring(CurrentZIteration)
 
-        module["Regions"][IndexName] = {}
-        module["Regions"][IndexName]["Region Part"] = Region
-        module["Regions"][IndexName]["Anchor Points"] = {}
+        if Settings["Use Parts"] == true then
+            local Region = QuickPart(RegionSize, RegionCFrame)
 
-        Region.Name = IndexName
+            module["Regions"][IndexName] = {}
+            module["Regions"][IndexName]["Region Part"] = Region
+            module["Regions"][IndexName]["Anchor Points"] = {}
+    
+            Region.Name = IndexName
+        elseif Settings["Use Parts"] == false then
+            module["Regions"][IndexName] = {}
+            module["Regions"][IndexName]["Region Size"] = RegionSize
+            module["Regions"][IndexName]["Region CFrame"] = RegionCFrame
+            module["Regions"][IndexName]["Anchor Points"] = {}
+        end
+        
     end
     
     local function ParseAlongX()
@@ -334,14 +359,18 @@ function module:GenerateInternalRegions()
 
     --// Place anchor points within each region
     SortAnchorPointsIntoRegions()
-
-    return module["Regions"]
 end
 
 function module:TrackRegionChanges()
     --// Set up events to log region changes
     for RegionName, RegionData in pairs (module["Regions"]) do
-        local TrackedRegion = OTAM.addArea(RegionName, RegionData["Region Part"])
+        local TrackedRegion
+
+        if Settings["Use Parts"] == true then
+            TrackedRegion = OTAM.addArea(RegionName, RegionData["Region Part"])
+        elseif Settings["Use Parts"] == false then
+            TrackedRegion = OTAM.addArea(RegionName, RegionData["Region CFrame"], RegionData["Region Size"])
+        end
 
         TrackedRegion.onEnter:Connect(function()
             module["Current Region"] = RegionName

@@ -10,6 +10,8 @@ local module = {
 
     ["Region Length"] = 100, --// This is an invisible cube length.  Make sure this value is at least a third of the search radius.  Customize to your liking
     
+    ["Use Parts"] = false, --// Whether CullingService creates a physical part that the player walks into to work or just uses CFrame positions
+
     ["Wait Time"] = .5, --// Determines how often CullingService checks to cull things in or out
 
     --[[
