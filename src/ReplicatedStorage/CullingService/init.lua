@@ -15,6 +15,7 @@ local CulledObjects = workspace:WaitForChild("CulledObjects")
 
 local RegionHandling = require(script:WaitForChild("RegionHandling"))
 local Settings = require(script:WaitForChild("Settings"))
+local Signal = require(script:WaitForChild("Signal"))
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -30,6 +31,17 @@ local module = {
     ["CurrentCulledInRanges"] = {}, --// Numeric table holding all currently culled in ranges (indexes correlated to CurrentCulledInModels)
     ["ModelAnchorPointCorrelations"] = {}, --// Inverse of AnchorPointModelCorrelations, dictionary format is [Model] = AnchorPoint
     ["NonCulledObjectCorrelations"] = {}, --// A dictionary of [Model] = Folder of Other Ranges
+
+    --// Models to track for Signals
+    ["ModelNamesAssociatedWithSignals"] = {
+        ["CullIn"] = {}, --// Dictionary [ModelName] = Signal
+        ["CullOut"] = {}, --// Dictionary [ModelName] = Signal
+    },
+
+    ["RangeAssociatedWithSignals"] = {
+        ["CullIn"] = {}, --// Dictionary [ModelName] = {[RangeName] = Signal}
+        ["CullOut"] = {}, --// Dictionary [ModelName] = {[RangeName] = Signal}
+    },
 }
 
 local function CharacterAdded(Player, BoundFunction, ...)
@@ -148,6 +160,39 @@ local function InDistance(ComaprisonNumber, MaximumBound)
     return false
 end
 
+--// Second argument (RangeName) is optional
+--// ParameterDictionary = {["Model"] = Model, ["Type"] = string ("CullIn" or "CullOut"), ["ModelName"] = string, ["RangeName"] = string}
+local function HandleSignals(ParameterDictionary: table)
+    local Model: Model = ParameterDictionary["Model"]
+    local ModelName: string = ParameterDictionary["ModelName"]
+    local RangeName: string = ParameterDictionary["RangeName"]
+    local Type: string = ParameterDictionary["Type"]
+
+    --// Handle for only range
+    if RangeName then
+        local RangeTableExistsForModel: table = module["RangeAssociatedWithSignals"][Type][ModelName]
+
+        if not RangeTableExistsForModel then
+            return
+        end
+
+        local RangeSignal: RBXScriptSignal = RangeTableExistsForModel[RangeName]
+
+        if RangeSignal then
+            RangeSignal:Fire(Model)
+        end
+
+        return
+    end
+
+    --// Handle for only models
+    local SignalForModel: RBXScriptSignal = module["ModelNamesAssociatedWithSignals"][Type][ModelName]
+
+    if SignalForModel then
+        SignalForModel:Fire(Model)
+    end
+end
+
 --[[
     Tool functions:
 
@@ -164,20 +209,44 @@ local function CullIn(AnchorPoint: BasePart)
 
     local AlreadyCreated = CheckIfAlreadyCulledIn(Model)
 
-    if AlreadyCreated then --// For models that have already been streamed in once and are being rest
+    if AlreadyCreated then --// For models that have already been streamed in once and are being reset
         for _, Folder in pairs(ModelNonCulledObjects:GetChildren()) do
-            if table.find(RangeTable, Folder.Name) then
+            local Range = Folder.Name
+
+            if table.find(RangeTable, Range) then
                 Folder.Parent = Model
+
+                HandleSignals({
+                    ["Model"] = Model,
+                    ["Type"] = "CullIn",
+                    ["ModelName"] = Model.Name,
+                    ["Range"] = Range
+                })
             end
         end
     else
         Model:SetPrimaryPartCFrame(AnchorPoint.CFrame)
 
         for _, Folder in pairs (Model:GetChildren()) do --// Each model should be sorted into the "Short", "Medium", and "Long" sub-folders
-            if not table.find(RangeTable, Folder.Name) then --// Current range is not being culled in
+            local Range = Folder.Name
+            
+            if not table.find(RangeTable, Range) then --// Current range is not being culled in
                 Folder.Parent = ModelNonCulledObjects
+            else
+                HandleSignals({
+                    ["Model"] = Model,
+                    ["Type"] = "CullIn",
+                    ["ModelName"] = Model.Name,
+                    ["Range"] = Range,
+                })
             end
         end
+
+        HandleSignals({
+            ["Model"] = Model,
+            ["Type"] = "CullIn",
+            ["ModelName"] = Model.Name,
+        })
 
         Model.Parent = CulledObjects
     end
@@ -206,6 +275,12 @@ local function CullOut(Model: Model)
     module.ModelAnchorPointCorrelations[Model] = nil
 
     Model:Destroy()
+
+    HandleSignals({
+        ["Model"] = Model,
+        ["Type"] = "CullOut",
+        ["ModelName"] = Model.Name,
+    })
 end
 
 --// Used when updating ranges
@@ -213,14 +288,32 @@ local function CullUpdate(AnchorPoint: BasePart)
     local Model, ModelNonCulledObjects, RangeTable = ReturnModelValues(AnchorPoint)
 
     for _, Folder in pairs (ModelNonCulledObjects:GetChildren()) do
-        if table.find(RangeTable, Folder.Name) then
+        local Range = Folder.Name
+
+        if table.find(RangeTable, Range) then
             Folder.Parent = Model
+
+            HandleSignals({
+                ["Model"] = Model,
+                ["Type"] = "CullIn",
+                ["ModelName"] = Model.Name,
+                ["Range"] = Range,
+            })
         end
     end
 
     for _, Folder in pairs (Model:GetChildren()) do --// Each model should be sorted into the "Short", "Medium", and "Long" sub-folders
-        if not table.find(RangeTable, Folder.Name) then --// Current range is not being culled in
+        local Range = Folder.Name
+        
+        if not table.find(RangeTable, Range) then --// Current range is not being culled in
             Folder.Parent = ModelNonCulledObjects
+
+            HandleSignals({
+                ["Model"] = Model,
+                ["Type"] = "CullOut",
+                ["ModelName"] = Model.Name,
+                ["Range"] = Range,
+            })
         end
     end
 end
@@ -323,7 +416,7 @@ end
 --// What actually handles the culling
 local function CoreLoop()
     while true do
-        wait(Settings["Wait Time"]) --// This doesn't have to be super specific, so I'm just using the basic Roblox wait function
+        task.wait(Settings["Wait Time"]) --// This doesn't have to be super specific, so I'm just using the basic Roblox wait function
         
         if not Settings["Paused"] and HumanoidRootPart then --// If not paused and the player is alive and they are currently in a culling region
             --// Search for all nodes at the furthest distances (long)
@@ -419,14 +512,53 @@ end
     I.e. the ones designed to be called
 ]]
 
+--// Returns a Signal which is fired every time a model with the name provided is culled in.  Signal provides the model as a first argument
+function module:CreateSignalForModelCullIn(ModelName: string)
+    module["ModelNamesAssociatedWithSignals"]["CullIn"][ModelName] = Signal.new()
+
+    return module["ModelNamesAssociatedWithSignals"]["CullIn"][ModelName]
+end
+
+--// Returns a Signal which is fired every time a model with the name provided is culled out.  Signal provides the model (in this case, nil) as a first argument
+function module:CreateSignalForModelCullOut(ModelName: string)
+    module["ModelNamesAssociatedWithSignals"]["CullOut"][ModelName] = Signal.new()
+
+    return module["ModelNamesAssociatedWithSignals"]["CullOut"][ModelName]
+end
+
+--// Returns a Signal which is fired every time a model with the name provided is culled in.  Signal provides the model as a first argument
+function module:CreateSignalForModelCullInAtRange(ModelName: string, RangeName: string)
+    if not module["RangeAssociatedWithSignals"]["CullIn"][ModelName] then
+        module["RangeAssociatedWithSignals"]["CullIn"][ModelName] = {}
+    end
+
+    module["RangeAssociatedWithSignals"]["CullIn"][ModelName][RangeName] = Signal.new()
+
+    return module["RangeAssociatedWithSignals"]["CullIn"][ModelName][RangeName]
+end
+
+--// Returns a Signal which is fired every time a model with the name provided is culled in.  Signal provides the model as a first argument
+function module:CreateSignalForModelCullOutAtRange(ModelName: string, RangeName: string)
+    if not module["RangeAssociatedWithSignals"]["CullOut"][ModelName] then
+        module["RangeAssociatedWithSignals"]["CullOut"][ModelName] = {}
+    end
+
+    module["RangeAssociatedWithSignals"]["CullOut"][ModelName][RangeName] = Signal.new()
+
+    return module["RangeAssociatedWithSignals"]["CullOut"][ModelName][RangeName]
+end
+
+--// Resumes CullingService
 function module:Resume()
     module["Paused"] = false
 end
 
+--// Pauses CullingService
 function module:Pause()
     module["Paused"] = true
 end
 
+--// Initializes and runs CullingService
 function module.Initialize()
     --// Validate this is being run on the client
     if not RunService:IsClient() then

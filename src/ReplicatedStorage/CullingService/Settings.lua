@@ -1,6 +1,6 @@
 local module = {
     ["Distances"] = {
-        --// Distances for culling things in
+        --// Distances for culling things in (you are able to add more!)
         ["Short"] = 20,
         ["Medium"] = 50,
         ["Long"] = 100,
@@ -8,7 +8,7 @@ local module = {
 
     ["Paused"] = false, --// Whether the CullingService is paused, defaults to false.  This setting can be changed via the :Pause and :Resume functions
 
-    ["Region Length"] = 100, --// This is an invisible cube length.  Make sure this value is at least a third of the search radius.  Customize to your liking
+    ["Region Length"] = 100, --// This is an invisible cube length.  Make sure this is *at least* one-thirds the length of your largest value in ["Distances"] (recommend to exceed that, otherwise you may get streaming issues)  Customize to your liking
     
     ["Use Parts"] = false, --// Whether CullingService creates a physical part that the player walks into to work or just uses CFrame positions
 

@@ -234,8 +234,8 @@ function module:GenerateInternalRegions()
     local BoundingBoxCFrame, BoundingBoxSize = GetBoundingBox(workspace)
     
     --// Store the edge position so that regions can be sequentially created
-    local EdgePosition = BoundingBoxCFrame.Position - Vector3.new(((BoundingBoxSize.X)/2) - Settings["Region Length"]/2, (BoundingBoxSize.Y)/2 - Settings["Region Length"]/2, (BoundingBoxSize.Z)/2 - Settings["Region Length"]/2)
-    
+    local EdgePosition = BoundingBoxCFrame.Position - Vector3.new(((BoundingBoxSize.X)/2), (BoundingBoxSize.Y)/2, (BoundingBoxSize.Z)/2)
+
     --// Booleans which determine if a row has been fully checked
     local CheckedAllX = false
     local CheckedAllY = false
