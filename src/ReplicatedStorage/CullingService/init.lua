@@ -512,21 +512,21 @@ end
     I.e. the ones designed to be called
 ]]
 
---// Returns a Signal which is fired every time a model with the name provided is culled in.  Signal provides the model as a first argument
+--// Returns a Signal which is fired every time a model with the name provided is culled in.  When the Signal is fired, it provides the model as the first parameter
 function module:CreateSignalForModelCullIn(ModelName: string)
     module["ModelNamesAssociatedWithSignals"]["CullIn"][ModelName] = Signal.new()
 
     return module["ModelNamesAssociatedWithSignals"]["CullIn"][ModelName]
 end
 
---// Returns a Signal which is fired every time a model with the name provided is culled out.  Signal provides the model (in this case, nil) as a first argument
+--// Returns a Signal which is fired every time a model with the name provided is culled out.  When the Signal is fired, it provides the model (in this case nil) as the first parameter
 function module:CreateSignalForModelCullOut(ModelName: string)
     module["ModelNamesAssociatedWithSignals"]["CullOut"][ModelName] = Signal.new()
 
     return module["ModelNamesAssociatedWithSignals"]["CullOut"][ModelName]
 end
 
---// Returns a Signal which is fired every time a model with the name provided is culled in.  Signal provides the model as a first argument
+--// Returns a Signal which is fired every time a model with the name provided is culled in.  When the Signal is fired, it provides the model as the first parameter
 function module:CreateSignalForModelCullInAtRange(ModelName: string, RangeName: string)
     if not module["RangeAssociatedWithSignals"]["CullIn"][ModelName] then
         module["RangeAssociatedWithSignals"]["CullIn"][ModelName] = {}
@@ -537,7 +537,7 @@ function module:CreateSignalForModelCullInAtRange(ModelName: string, RangeName: 
     return module["RangeAssociatedWithSignals"]["CullIn"][ModelName][RangeName]
 end
 
---// Returns a Signal which is fired every time a model with the name provided is culled in.  Signal provides the model as a first argument
+--// Returns a Signal which is fired every time a model with the name provided is culled out.  When the Signal is fired, it provides the model as the first parameter
 function module:CreateSignalForModelCullOutAtRange(ModelName: string, RangeName: string)
     if not module["RangeAssociatedWithSignals"]["CullOut"][ModelName] then
         module["RangeAssociatedWithSignals"]["CullOut"][ModelName] = {}
