@@ -121,29 +121,27 @@ local function QuickPart(PartSize: Vector3, PartCFrame: CFrame)
 end
 
 local function SortAnchorPointsIntoRegions()
-    local AnchorPointsToCheck = {}
+    local AnchorPointsToCheck = AnchorPoints:GetChildren()
 
-    --// Create a quick copy of the table
-    for _, AnchorPoint in pairs (AnchorPoints:GetChildren()) do
-        table.insert(AnchorPointsToCheck, AnchorPoint)
-    end
+    for Index, AnchorPoint in pairs (AnchorPointsToCheck) do
+        local InsideRegion: boolean
 
-    --// Optimize this later, just not sure if there's a better method
-    for _, RegionData in pairs (module["Regions"]) do
-        for Index, AnchorPoint in pairs (AnchorPointsToCheck) do
-            local InsideRegion: boolean
-
+        for _, RegionData in pairs (module["Regions"]) do
             if Settings["Use Parts"] == true then
                 InsideRegion = CheckInsideRegion(AnchorPoint.Position, RegionData["Region Part"].CFrame, RegionData["Region Part"].Size)
             elseif Settings["Use Parts"] == false then
                 InsideRegion = CheckInsideRegion(AnchorPoint.Position, RegionData["Region CFrame"], RegionData["Region Size"])
             end
-
+    
             if InsideRegion then
-                --// Theoretically, it will get faster and faster as it loops through, since less entries
                 table.insert(RegionData["Anchor Points"], AnchorPoint)
-                table.remove(AnchorPointsToCheck, Index)
+
+                break
             end
+        end
+
+        if not InsideRegion then
+            warn("No region found for AnchorPoint", AnchorPoint)
         end
     end
 end
