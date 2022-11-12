@@ -13,6 +13,8 @@ local NonCulledObjects = ReplicatedStorage:WaitForChild("NonCulledObjects")
 
 local CulledObjects = workspace:WaitForChild("CulledObjects")
 
+local AnimationPackages = script:WaitForChild("AnimationPackages")
+
 local RegionHandling = require(script:WaitForChild("RegionHandling"))
 local Settings = require(script:WaitForChild("Settings"))
 local Signal = require(script:WaitForChild("Signal"))
@@ -160,8 +162,27 @@ local function InDistance(ComaprisonNumber, MaximumBound)
     return false
 end
 
---// Second argument (RangeName) is optional
---// ParameterDictionary = {["Model"] = Model, ["Type"] = string ("CullIn" or "CullOut"), ["ModelName"] = string, ["RangeName"] = string}
+local function HandleAnimation(ObjectToAnimate: Model | BasePart, InOrOut: string)
+    local AnimationPackageName = Settings["Animation Package"]
+
+    if not AnimationPackageName then
+        return
+    end
+
+    local AnimationPackageFound = AnimationPackages:FindFirstChild(AnimationPackageName)
+
+    if not AnimationPackageFound then
+        warn("Animation package", AnimationPackageName, "not found - check for typo")
+
+        return
+    end
+
+    local AnimationFunction = require(AnimationPackageFound)
+
+    AnimationFunction(ObjectToAnimate, InOrOut)
+end
+
+--// ParameterDictionary = {["Model"] = Model, ["Type"] = string ("CullIn" or "CullOut"), ["ModelName"] = string, ["RangeName"] = string? (optional)}
 local function HandleSignals(ParameterDictionary: table)
     local Model: Model = ParameterDictionary["Model"]
     local ModelName: string = ParameterDictionary["ModelName"]
@@ -199,7 +220,7 @@ end
     These are the tools of the CullingService.  Based on what the brain functions determine is the best choice, one of these functions are used to make it actually happen
 
     CullIn: Used when Culling something in for the first thing
-    Cullout: Used when culling out an object completely
+    CullOut: Used when culling out an object completely
     CullUpdate: Used when updating ranges
 ]]
 
@@ -216,6 +237,8 @@ local function CullIn(AnchorPoint: BasePart)
             if table.find(RangeTable, Range) then
                 Folder.Parent = Model
 
+                HandleAnimation(Folder, "CullIn")
+
                 HandleSignals({
                     ["Model"] = Model,
                     ["Type"] = "CullIn",
@@ -225,7 +248,7 @@ local function CullIn(AnchorPoint: BasePart)
             end
         end
     else
-        Model:SetPrimaryPartCFrame(AnchorPoint.CFrame)
+        Model:PivotTo(AnchorPoint.CFrame)
 
         for _, Folder in pairs (Model:GetChildren()) do --// Each model should be sorted into the "Short", "Medium", and "Long" sub-folders
             local Range = Folder.Name
@@ -242,13 +265,15 @@ local function CullIn(AnchorPoint: BasePart)
             end
         end
 
+        Model.Parent = CulledObjects
+
+        HandleAnimation(Model, "CullIn")
+
         HandleSignals({
             ["Model"] = Model,
             ["Type"] = "CullIn",
             ["ModelName"] = Model.Name,
         })
-
-        Model.Parent = CulledObjects
     end
 end
 
@@ -259,6 +284,8 @@ local function CullOut(Model: Model)
         return
     end
 
+    --// Why are we destroying the WeldConstraints?????? (11/12/22)
+    --[[
     local WeldAnchorPoints = table.find(Settings["Welded Anchor Points"], Model.Name)
 
     if WeldAnchorPoints then
@@ -268,19 +295,25 @@ local function CullOut(Model: Model)
             end
         end
     end
+    ]]
 
     local AnchorPoint = module["ModelAnchorPointCorrelations"][Model]
 
     module.AnchorPointModelCorrelations[AnchorPoint] = nil
     module.ModelAnchorPointCorrelations[Model] = nil
 
-    Model:Destroy()
+    --// This is wrapped in a spawn function, because some animations may have yield functions (to prevent being destroyed before the animation is complete, but that can hang the whole script)
+    task.spawn(function()
+        HandleAnimation(Model, "CullOut") --// The animation should have built in yielding
 
-    HandleSignals({
-        ["Model"] = Model,
-        ["Type"] = "CullOut",
-        ["ModelName"] = Model.Name,
-    })
+        Model:Destroy()
+
+        HandleSignals({
+            ["Model"] = Model,
+            ["Type"] = "CullOut",
+            ["ModelName"] = Model.Name,
+        })
+    end)
 end
 
 --// Used when updating ranges
@@ -292,6 +325,8 @@ local function CullUpdate(AnchorPoint: BasePart)
 
         if table.find(RangeTable, Range) then
             Folder.Parent = Model
+
+            HandleAnimation(Folder, "CullIn")
 
             HandleSignals({
                 ["Model"] = Model,
@@ -307,6 +342,8 @@ local function CullUpdate(AnchorPoint: BasePart)
         
         if not table.find(RangeTable, Range) then --// Current range is not being culled in
             Folder.Parent = ModelNonCulledObjects
+
+            HandleAnimation(Folder, "CullOut")
 
             HandleSignals({
                 ["Model"] = Model,

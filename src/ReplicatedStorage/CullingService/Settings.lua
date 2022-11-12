@@ -1,4 +1,6 @@
 local module = {
+    ["Animation Package"] = nil, --// Defaults to nil for backwards compatability
+
     ["Distances"] = {
         --// Distances for culling things in (you are able to add more!)
         ["Short"] = 20,

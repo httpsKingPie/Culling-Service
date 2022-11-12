@@ -166,7 +166,7 @@ function module.CullInEntireMap()
             
             local ModelToCull: Model = Model:Clone()--// For handy syntax autocomplete
 
-            ModelToCull:SetPrimaryPartCFrame(AnchorPoint.CFrame)
+            ModelToCull:PivotTo(AnchorPoint.CFrame)
             ModelToCull.Parent = CulledObjects
         end
     end
@@ -204,7 +204,7 @@ function module.CullInSelection()
 
                 local ModelToCull: Model = Model:Clone()
 
-                ModelToCull:SetPrimaryPartCFrame(AnchorPoint.CFrame)
+                ModelToCull:PivotTo(AnchorPoint.CFrame)
                 ModelToCull.Parent = CulledObjects
             end
         else
