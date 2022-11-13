@@ -59,7 +59,7 @@ local function CullOutAnimation(BasePart: BasePart)
     --// Reset to the original transparency
     local ParentChanged: RBXScriptSignal = TrueParent:GetPropertyChangedSignal("Parent")
 
-    ParentChanged:Once(function()
+    ParentChanged:Connect(function()
         if BasePart then
             BasePart.Transparency = OriginalTransparency
         end

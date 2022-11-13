@@ -278,24 +278,25 @@ local function CullIn(AnchorPoint: BasePart)
 end
 
 --// Used when culling out an object completely
-local function CullOut(Model: Model)
+local function CullOut(AnchorPoint: BasePart)
+    local Model, ModelNonCulledObjects, RangeTable = ReturnModelValues(AnchorPoint)
+
+    --// Clear internal tracking
+    module["AnchorPointModelCorrelations"][AnchorPoint] = nil
+    module["NonCulledObjectCorrelations"][Model] = nil
+
+    local Index = table.find(module["CurrentCulledInModels"], Model)
+
+    table.remove(module["CurrentCulledInModels"], Index)
+    table.remove(module["CurrentCulledInRanges"], Index)
+
+    --// Destroy the NonCulledObjects folder for this model
+    ModelNonCulledObjects:Destroy()
+
     if not Model:IsDescendantOf(workspace) then
         warn("Attempted to cull out a model that does not exist in workspace")
         return
     end
-
-    --// Why are we destroying the WeldConstraints?????? (11/12/22)
-    --[[
-    local WeldAnchorPoints = table.find(Settings["Welded Anchor Points"], Model.Name)
-
-    if WeldAnchorPoints then
-        for _, Child in pairs (module["ModelAnchorPointCorrelations"][Model]:GetChildren()) do
-            if Child:IsA("WeldConstraint") then
-                Child:Destroy()
-            end
-        end
-    end
-    ]]
 
     local AnchorPoint = module["ModelAnchorPointCorrelations"][Model]
 
@@ -314,6 +315,21 @@ local function CullOut(Model: Model)
             ["ModelName"] = Model.Name,
         })
     end)
+
+    --// Clean up the welds which are stored in the anchor point (because they are created each time)
+    local WeldAnchorPoints = table.find(Settings["Welded Anchor Points"], AnchorPoint.Name)
+
+    if WeldAnchorPoints then
+        for _, Child: WeldConstraint in pairs (AnchorPoint:GetChildren()) do
+            if not Child:IsA("WeldConstraint") then
+                continue
+            end
+
+            if not Child.Part1 or Child.Part1.Parent == nil then
+                Child:Destroy()
+            end
+        end
+    end
 end
 
 --// Used when updating ranges
@@ -434,19 +450,28 @@ local function ProcessCullOut(DistanceFolder: Folder, AnchorPoint: BasePart)
         
         CullUpdate(AnchorPoint) --// Determine whether to cull out or cull in
     else --// Removing this range will mean effectively removing the model so we completely cull it out
-        --// Clear internal tracking
-        module["AnchorPointModelCorrelations"][AnchorPoint] = nil
-        module["NonCulledObjectCorrelations"][Model] = nil
+        CullOut(AnchorPoint) --// Determine whether to cull out or cull in
+    end
+end
 
-        local Index = table.find(module["CurrentCulledInModels"], Model)
+local function BackupCheck(HumanoidRootPart: BasePart)
+    local FurthestDistance = 0
 
-        table.remove(module["CurrentCulledInModels"], Index)
-        table.remove(module["CurrentCulledInRanges"], Index)
+    --// Get the furthest distance (earlier versions were less modularized)
+    for DistanceName: string, Distance: number in pairs (Settings["Distances"]) do
+        if Distance > FurthestDistance then
+            FurthestDistance = Distance
+        end
+    end
 
-        --// Destroy the NonCulledObjects folder for this model
-        ModelNonCulledObjects:Destroy()
-            
-        CullOut(Model) --// Determine whether to cull out or cull in
+    for AnchorPoint: BasePart, AssociatedModel: Model in pairs (module["AnchorPointModelCorrelations"]) do
+        local Distance = (HumanoidRootPart.Position - AnchorPoint.Position).Magnitude
+
+        if Distance < FurthestDistance then
+            continue
+        end
+
+        CullOut(AnchorPoint)
     end
 end
 
@@ -539,6 +564,8 @@ local function CoreLoop()
                     DetermineCullOut(LongDistanceFolder, InLongDistance)
                 end
             end
+
+            BackupCheck(HumanoidRootPart)
         end
     end
 end
