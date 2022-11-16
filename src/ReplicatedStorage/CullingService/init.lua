@@ -85,10 +85,28 @@ local function ReturnModelValues(AnchorPoint: BasePart)
     local Index: number = table.find(module["CurrentCulledInModels"], Model)
     local RangeTable: table = module["CurrentCulledInRanges"][Index]
 
+    if not Model then
+        --warn("Unable to return Model for value", AnchorPoint.Name)
+
+        return nil, nil, nil
+    end
+
+    if not ModelNonCulledObjects then
+        --warn("Unable to return ModelNonCulledObjects for value", AnchorPoint.Name)
+
+        return nil, nil, nil
+    end
+
+    if not RangeTable then
+        --warn("Unable to return RangeTable for value", AnchorPoint.Name)
+
+        return nil, nil, nil
+    end
+
     return Model, ModelNonCulledObjects, RangeTable
 end
 
---// Returns all anchor points in range and their distance from the origin position
+--// Returns all anchor points in relevant regions and their distance from the origin position (table format is {[AnchorPoint: BasePart] = Distance: number})
 local function GetAnchorPointsInRange(OriginPosition: Vector3)
     local AnchorPointDistances = {}
 
@@ -96,11 +114,11 @@ local function GetAnchorPointsInRange(OriginPosition: Vector3)
 
     for _, AnchorPoint in pairs (AllTrackedAnchorPoints) do
         local Distance = (OriginPosition - AnchorPoint.Position).Magnitude
-
-        table.insert(AnchorPointDistances, Distance)
+        
+        AnchorPointDistances[AnchorPoint] = Distance
     end
 
-    return AllTrackedAnchorPoints, AnchorPointDistances
+    return AnchorPointDistances
 end
 
 --[[
@@ -145,6 +163,13 @@ end
 --// Checks if a range is already culled in
 local function CheckIfRangeIsCulledIn(AnchorPoint: BasePart, RangeName: string)
     local Model, ModelNonCulledObjects, RangeTable = ReturnModelValues(AnchorPoint)
+
+    --[[
+        This sometimes 'errors' (doesn't find a RangeTable, but it functions correctly.)
+    ]]
+    if not Model then
+        return
+    end
 
     if table.find(RangeTable, RangeName) then
         return true
@@ -250,7 +275,7 @@ local function CullIn(AnchorPoint: BasePart)
     else
         Model:PivotTo(AnchorPoint.CFrame)
 
-        for _, Folder in pairs (Model:GetChildren()) do --// Each model should be sorted into the "Short", "Medium", and "Long" sub-folders
+        for _, Folder in pairs (Model:GetChildren()) do --// Each model should be sorted into relevant distance folders (ex: "Short", "Medium", "Long") [these must correlate with Settings.Distances]
             local Range = Folder.Name
             
             if not table.find(RangeTable, Range) then --// Current range is not being culled in
@@ -280,6 +305,10 @@ end
 --// Used when culling out an object completely
 local function CullOut(AnchorPoint: BasePart)
     local Model, ModelNonCulledObjects, RangeTable = ReturnModelValues(AnchorPoint)
+
+    if not Model then --// Warning bundled in
+        return
+    end
 
     --// Clear internal tracking
     module["AnchorPointModelCorrelations"][AnchorPoint] = nil
@@ -336,6 +365,10 @@ end
 local function CullUpdate(AnchorPoint: BasePart)
     local Model, ModelNonCulledObjects, RangeTable = ReturnModelValues(AnchorPoint)
 
+    if not Model then --// Warning bundled in
+        return
+    end
+
     for _, Folder in pairs (ModelNonCulledObjects:GetChildren()) do
         local Range = Folder.Name
 
@@ -353,7 +386,7 @@ local function CullUpdate(AnchorPoint: BasePart)
         end
     end
 
-    for _, Folder in pairs (Model:GetChildren()) do --// Each model should be sorted into the "Short", "Medium", and "Long" sub-folders
+    for _, Folder in pairs (Model:GetChildren()) do --// Each model should be sorted into relevant distance folders (ex: "Short", "Medium", "Long") [these must correlate with Settings.Distances]
         local Range = Folder.Name
         
         if not table.find(RangeTable, Range) then --// Current range is not being culled in
@@ -442,6 +475,10 @@ local function ProcessCullOut(DistanceFolder: Folder, AnchorPoint: BasePart)
     --// Don't need to check if it is ready to be culled, since it will be already in workspace
     local Model, ModelNonCulledObjects, RangeTable = ReturnModelValues(AnchorPoint)
 
+    if not Model then --// Warning bundled in
+        return
+    end
+
     local RangesCulledIn = #RangeTable --// If this is 1, then that means removing this range will result in removing the whole model.  This should never be 0
 
     if RangesCulledIn > 1 then --// Means we are updating the model (culling out a range), not culling out the whole model
@@ -482,24 +519,41 @@ local function CoreLoop()
         
         if not Settings["Paused"] and HumanoidRootPart then --// If not paused and the player is alive and they are currently in a culling region
             --// Search for all nodes at the furthest distances (long)
-            local AnchorPointsInRadius, Distances = GetAnchorPointsInRange(HumanoidRootPart.Position)
+            local AnchorPointDictionary = GetAnchorPointsInRange(HumanoidRootPart.Position)
 
-            for Index, AnchorPoint in ipairs (AnchorPointsInRadius) do
+            for AnchorPoint: BasePart, AnchorPointDistance: number in pairs (AnchorPointDictionary) do
                 --// Model that will be cloned if it is being culled in
                 local ReferenceModel = ModelStorage:FindFirstChild(AnchorPoint.Name)
 
-                --// Return distance folders (for short, medium, and/or long)
-                local ShortDistanceFolder = ReferenceModel:FindFirstChild("Short")
-                local MediumDistanceFolder = ReferenceModel:FindFirstChild("Medium")
-                local LongDistanceFolder = ReferenceModel:FindFirstChild("Long")
+                if not ReferenceModel then
+                    warn("No reference model found for AnchorPoint", AnchorPoint.Name)
+
+                    continue
+                end
+
+                --// Return distance folders
+                local DistanceFolderDictionary = {} --// looks like {[DistanceFolder: Folder] = InDistanceToCull: boolean}
+
+                for _, Folder: Folder in pairs (ReferenceModel:GetChildren()) do
+                    if not Folder:IsA("Folder") then
+                        continue
+                    end
+
+                    local DistanceAssociatedWithFolder = Settings["Distances"][Folder.Name]
+
+                    if not DistanceAssociatedWithFolder then
+                        warn("Distance Folder [", Folder.Name, "] in Model [", ReferenceModel.Name, "] does not have a distance associated with it")
+
+                        continue
+                    end
+
+                    local IsInDistance = InDistance(AnchorPointDistance, DistanceAssociatedWithFolder)
+
+                    DistanceFolderDictionary[Folder] = IsInDistance
+                end
 
                 --// Tells whether the model is culled in
-                local ModelCulledIn = module["AnchorPointModelCorrelations"][AnchorPoint]
-
-                --// Return whether the model is in distance for the short, medium, or long range to be culled in
-                local InShortDistance = InDistance(Distances[Index], Settings["Distances"]["Short"])
-                local InMediumDistance = InDistance(Distances[Index], Settings["Distances"]["Medium"])
-                local InLongDistance = InDistance(Distances[Index], Settings["Distances"]["Long"])
+                local ModelCulledIn = CheckIfModelIsAlreadyCulledIn(AnchorPoint)
                 
                 --[[
                     Evaluating whether to cull something in
@@ -552,16 +606,12 @@ local function CoreLoop()
                     end
                 end
 
-                --// Determines whether to Cull in short, medium, and long ranges
-                DetermineCullIn(ShortDistanceFolder, InShortDistance)
-                DetermineCullIn(MediumDistanceFolder, InMediumDistance)
-                DetermineCullIn(LongDistanceFolder, InLongDistance)
+                for DistanceFolder: Folder, IsInDistance: boolean in pairs (DistanceFolderDictionary) do
+                    DetermineCullIn(DistanceFolder, IsInDistance)
 
-                --// Determines whether to cull out short, medium, and long ranges
-                if ModelCulledIn then
-                    DetermineCullOut(ShortDistanceFolder, InShortDistance)
-                    DetermineCullOut(MediumDistanceFolder, InMediumDistance)
-                    DetermineCullOut(LongDistanceFolder, InLongDistance)
+                    if ModelCulledIn then
+                        DetermineCullOut(DistanceFolder, IsInDistance)
+                    end
                 end
             end
 
