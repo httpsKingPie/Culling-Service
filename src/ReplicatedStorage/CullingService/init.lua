@@ -512,8 +512,10 @@ local function BackupCheck(HumanoidRootPart: BasePart)
     end
 end
 
---// What actually handles the culling
+--// What actually handles the culling (back up check runs every five loops)
 local function CoreLoop()
+    local TimeSinceBackupCheck = 0
+
     while true do
         task.wait(Settings["Wait Time"]) --// This doesn't have to be super specific, so I'm just using the basic Roblox wait function
         
@@ -615,7 +617,14 @@ local function CoreLoop()
                 end
             end
 
-            BackupCheck(HumanoidRootPart)
+            --// Handles the backup check
+            if TimeSinceBackupCheck >= Settings["Backup Regularity"] then
+                TimeSinceBackupCheck = 0
+
+                BackupCheck(HumanoidRootPart)
+            else
+                TimeSinceBackupCheck = TimeSinceBackupCheck + 1
+            end
         end
     end
 end
@@ -709,7 +718,9 @@ function module.Initialize()
     RegionHandling:TrackRegionChanges()
 
     --// Actual culling portion (the core loop)
-    coroutine.wrap(CoreLoop)()
+    task.spawn(function()
+        CoreLoop()
+    end)
 end
 
 return module

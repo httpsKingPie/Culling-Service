@@ -1,6 +1,8 @@
 local module = {
     ["Animation Package"] = nil, --// Defaults to nil for backwards compatability
 
+    ["Backup Regularity"] = 5, --// This means that the backup check runs every (x) times that the core loop activates.  To visualize this in time, multiply this value by the Wait Time value, and that is how often the backup check runs
+
     ["Distances"] = {
         --// Distances for culling things in (you are able to add more!)
         ["Short"] = 20,
