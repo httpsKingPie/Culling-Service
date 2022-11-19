@@ -13,6 +13,8 @@ local NonCulledObjects = ReplicatedStorage:WaitForChild("NonCulledObjects")
 
 local CulledObjects = workspace:WaitForChild("CulledObjects")
 
+local AnimationPackages = script:WaitForChild("AnimationPackages")
+
 local RegionHandling = require(script:WaitForChild("RegionHandling"))
 local Settings = require(script:WaitForChild("Settings"))
 local Signal = require(script:WaitForChild("Signal"))
@@ -83,10 +85,28 @@ local function ReturnModelValues(AnchorPoint: BasePart)
     local Index: number = table.find(module["CurrentCulledInModels"], Model)
     local RangeTable: table = module["CurrentCulledInRanges"][Index]
 
+    if not Model then
+        --warn("Unable to return Model for value", AnchorPoint.Name)
+
+        return nil, nil, nil
+    end
+
+    if not ModelNonCulledObjects then
+        --warn("Unable to return ModelNonCulledObjects for value", AnchorPoint.Name)
+
+        return nil, nil, nil
+    end
+
+    if not RangeTable then
+        --warn("Unable to return RangeTable for value", AnchorPoint.Name)
+
+        return nil, nil, nil
+    end
+
     return Model, ModelNonCulledObjects, RangeTable
 end
 
---// Returns all anchor points in range and their distance from the origin position
+--// Returns all anchor points in relevant regions and their distance from the origin position (table format is {[AnchorPoint: BasePart] = Distance: number})
 local function GetAnchorPointsInRange(OriginPosition: Vector3)
     local AnchorPointDistances = {}
 
@@ -94,11 +114,11 @@ local function GetAnchorPointsInRange(OriginPosition: Vector3)
 
     for _, AnchorPoint in pairs (AllTrackedAnchorPoints) do
         local Distance = (OriginPosition - AnchorPoint.Position).Magnitude
-
-        table.insert(AnchorPointDistances, Distance)
+        
+        AnchorPointDistances[AnchorPoint] = Distance
     end
 
-    return AllTrackedAnchorPoints, AnchorPointDistances
+    return AnchorPointDistances
 end
 
 --[[
@@ -144,6 +164,13 @@ end
 local function CheckIfRangeIsCulledIn(AnchorPoint: BasePart, RangeName: string)
     local Model, ModelNonCulledObjects, RangeTable = ReturnModelValues(AnchorPoint)
 
+    --[[
+        This sometimes 'errors' (doesn't find a RangeTable, but it functions correctly.)
+    ]]
+    if not Model then
+        return
+    end
+
     if table.find(RangeTable, RangeName) then
         return true
     end
@@ -160,8 +187,27 @@ local function InDistance(ComaprisonNumber, MaximumBound)
     return false
 end
 
---// Second argument (RangeName) is optional
---// ParameterDictionary = {["Model"] = Model, ["Type"] = string ("CullIn" or "CullOut"), ["ModelName"] = string, ["RangeName"] = string}
+local function HandleAnimation(ObjectToAnimate: Model | BasePart, InOrOut: string)
+    local AnimationPackageName = Settings["Animation Package"]
+
+    if not AnimationPackageName then
+        return
+    end
+
+    local AnimationPackageFound = AnimationPackages:FindFirstChild(AnimationPackageName)
+
+    if not AnimationPackageFound then
+        warn("Animation package", AnimationPackageName, "not found - check for typo")
+
+        return
+    end
+
+    local AnimationFunction = require(AnimationPackageFound)
+
+    AnimationFunction(ObjectToAnimate, InOrOut)
+end
+
+--// ParameterDictionary = {["Model"] = Model, ["Type"] = string ("CullIn" or "CullOut"), ["ModelName"] = string, ["RangeName"] = string? (optional)}
 local function HandleSignals(ParameterDictionary: table)
     local Model: Model = ParameterDictionary["Model"]
     local ModelName: string = ParameterDictionary["ModelName"]
@@ -199,7 +245,7 @@ end
     These are the tools of the CullingService.  Based on what the brain functions determine is the best choice, one of these functions are used to make it actually happen
 
     CullIn: Used when Culling something in for the first thing
-    Cullout: Used when culling out an object completely
+    CullOut: Used when culling out an object completely
     CullUpdate: Used when updating ranges
 ]]
 
@@ -216,6 +262,8 @@ local function CullIn(AnchorPoint: BasePart)
             if table.find(RangeTable, Range) then
                 Folder.Parent = Model
 
+                HandleAnimation(Folder, "CullIn")
+
                 HandleSignals({
                     ["Model"] = Model,
                     ["Type"] = "CullIn",
@@ -225,9 +273,9 @@ local function CullIn(AnchorPoint: BasePart)
             end
         end
     else
-        Model:SetPrimaryPartCFrame(AnchorPoint.CFrame)
+        Model:PivotTo(AnchorPoint.CFrame)
 
-        for _, Folder in pairs (Model:GetChildren()) do --// Each model should be sorted into the "Short", "Medium", and "Long" sub-folders
+        for _, Folder in pairs (Model:GetChildren()) do --// Each model should be sorted into relevant distance folders (ex: "Short", "Medium", "Long") [these must correlate with Settings.Distances]
             local Range = Folder.Name
             
             if not table.find(RangeTable, Range) then --// Current range is not being culled in
@@ -242,31 +290,41 @@ local function CullIn(AnchorPoint: BasePart)
             end
         end
 
+        Model.Parent = CulledObjects
+
+        HandleAnimation(Model, "CullIn")
+
         HandleSignals({
             ["Model"] = Model,
             ["Type"] = "CullIn",
             ["ModelName"] = Model.Name,
         })
-
-        Model.Parent = CulledObjects
     end
 end
 
 --// Used when culling out an object completely
-local function CullOut(Model: Model)
-    if not Model:IsDescendantOf(workspace) then
-        warn("Attempted to cull out a model that does not exist in workspace")
+local function CullOut(AnchorPoint: BasePart)
+    local Model, ModelNonCulledObjects, RangeTable = ReturnModelValues(AnchorPoint)
+
+    if not Model then --// Warning bundled in
         return
     end
 
-    local WeldAnchorPoints = table.find(Settings["Welded Anchor Points"], Model.Name)
+    --// Clear internal tracking
+    module["AnchorPointModelCorrelations"][AnchorPoint] = nil
+    module["NonCulledObjectCorrelations"][Model] = nil
 
-    if WeldAnchorPoints then
-        for _, Child in pairs (module["ModelAnchorPointCorrelations"][Model]:GetChildren()) do
-            if Child:IsA("WeldConstraint") then
-                Child:Destroy()
-            end
-        end
+    local Index = table.find(module["CurrentCulledInModels"], Model)
+
+    table.remove(module["CurrentCulledInModels"], Index)
+    table.remove(module["CurrentCulledInRanges"], Index)
+
+    --// Destroy the NonCulledObjects folder for this model
+    ModelNonCulledObjects:Destroy()
+
+    if not Model:IsDescendantOf(workspace) then
+        warn("Attempted to cull out a model that does not exist in workspace")
+        return
     end
 
     local AnchorPoint = module["ModelAnchorPointCorrelations"][Model]
@@ -274,24 +332,50 @@ local function CullOut(Model: Model)
     module.AnchorPointModelCorrelations[AnchorPoint] = nil
     module.ModelAnchorPointCorrelations[Model] = nil
 
-    Model:Destroy()
+    --// This is wrapped in a spawn function, because some animations may have yield functions (to prevent being destroyed before the animation is complete, but that can hang the whole script)
+    task.spawn(function()
+        HandleAnimation(Model, "CullOut") --// The animation should have built in yielding
 
-    HandleSignals({
-        ["Model"] = Model,
-        ["Type"] = "CullOut",
-        ["ModelName"] = Model.Name,
-    })
+        Model:Destroy()
+
+        HandleSignals({
+            ["Model"] = Model,
+            ["Type"] = "CullOut",
+            ["ModelName"] = Model.Name,
+        })
+    end)
+
+    --// Clean up the welds which are stored in the anchor point (because they are created each time)
+    local WeldAnchorPoints = table.find(Settings["Welded Anchor Points"], AnchorPoint.Name)
+
+    if WeldAnchorPoints then
+        for _, Child: WeldConstraint in pairs (AnchorPoint:GetChildren()) do
+            if not Child:IsA("WeldConstraint") then
+                continue
+            end
+
+            if not Child.Part1 or Child.Part1.Parent == nil then
+                Child:Destroy()
+            end
+        end
+    end
 end
 
 --// Used when updating ranges
 local function CullUpdate(AnchorPoint: BasePart)
     local Model, ModelNonCulledObjects, RangeTable = ReturnModelValues(AnchorPoint)
 
+    if not Model then --// Warning bundled in
+        return
+    end
+
     for _, Folder in pairs (ModelNonCulledObjects:GetChildren()) do
         local Range = Folder.Name
 
         if table.find(RangeTable, Range) then
             Folder.Parent = Model
+
+            HandleAnimation(Folder, "CullIn")
 
             HandleSignals({
                 ["Model"] = Model,
@@ -302,11 +386,13 @@ local function CullUpdate(AnchorPoint: BasePart)
         end
     end
 
-    for _, Folder in pairs (Model:GetChildren()) do --// Each model should be sorted into the "Short", "Medium", and "Long" sub-folders
+    for _, Folder in pairs (Model:GetChildren()) do --// Each model should be sorted into relevant distance folders (ex: "Short", "Medium", "Long") [these must correlate with Settings.Distances]
         local Range = Folder.Name
         
         if not table.find(RangeTable, Range) then --// Current range is not being culled in
             Folder.Parent = ModelNonCulledObjects
+
+            HandleAnimation(Folder, "CullOut")
 
             HandleSignals({
                 ["Model"] = Model,
@@ -389,6 +475,10 @@ local function ProcessCullOut(DistanceFolder: Folder, AnchorPoint: BasePart)
     --// Don't need to check if it is ready to be culled, since it will be already in workspace
     local Model, ModelNonCulledObjects, RangeTable = ReturnModelValues(AnchorPoint)
 
+    if not Model then --// Warning bundled in
+        return
+    end
+
     local RangesCulledIn = #RangeTable --// If this is 1, then that means removing this range will result in removing the whole model.  This should never be 0
 
     if RangesCulledIn > 1 then --// Means we are updating the model (culling out a range), not culling out the whole model
@@ -397,47 +487,75 @@ local function ProcessCullOut(DistanceFolder: Folder, AnchorPoint: BasePart)
         
         CullUpdate(AnchorPoint) --// Determine whether to cull out or cull in
     else --// Removing this range will mean effectively removing the model so we completely cull it out
-        --// Clear internal tracking
-        module["AnchorPointModelCorrelations"][AnchorPoint] = nil
-        module["NonCulledObjectCorrelations"][Model] = nil
-
-        local Index = table.find(module["CurrentCulledInModels"], Model)
-
-        table.remove(module["CurrentCulledInModels"], Index)
-        table.remove(module["CurrentCulledInRanges"], Index)
-
-        --// Destroy the NonCulledObjects folder for this model
-        ModelNonCulledObjects:Destroy()
-            
-        CullOut(Model) --// Determine whether to cull out or cull in
+        CullOut(AnchorPoint) --// Determine whether to cull out or cull in
     end
 end
 
---// What actually handles the culling
+local function BackupCheck(HumanoidRootPart: BasePart)
+    local FurthestDistance = 0
+
+    --// Get the furthest distance (earlier versions were less modularized)
+    for DistanceName: string, Distance: number in pairs (Settings["Distances"]) do
+        if Distance > FurthestDistance then
+            FurthestDistance = Distance
+        end
+    end
+
+    for AnchorPoint: BasePart, AssociatedModel: Model in pairs (module["AnchorPointModelCorrelations"]) do
+        local Distance = (HumanoidRootPart.Position - AnchorPoint.Position).Magnitude
+
+        if Distance < FurthestDistance then
+            continue
+        end
+
+        CullOut(AnchorPoint)
+    end
+end
+
+--// What actually handles the culling (back up check runs every five loops)
 local function CoreLoop()
+    local TimeSinceBackupCheck = 0
+
     while true do
         task.wait(Settings["Wait Time"]) --// This doesn't have to be super specific, so I'm just using the basic Roblox wait function
         
         if not Settings["Paused"] and HumanoidRootPart then --// If not paused and the player is alive and they are currently in a culling region
             --// Search for all nodes at the furthest distances (long)
-            local AnchorPointsInRadius, Distances = GetAnchorPointsInRange(HumanoidRootPart.Position)
+            local AnchorPointDictionary = GetAnchorPointsInRange(HumanoidRootPart.Position)
 
-            for Index, AnchorPoint in ipairs (AnchorPointsInRadius) do
+            for AnchorPoint: BasePart, AnchorPointDistance: number in pairs (AnchorPointDictionary) do
                 --// Model that will be cloned if it is being culled in
                 local ReferenceModel = ModelStorage:FindFirstChild(AnchorPoint.Name)
 
-                --// Return distance folders (for short, medium, and/or long)
-                local ShortDistanceFolder = ReferenceModel:FindFirstChild("Short")
-                local MediumDistanceFolder = ReferenceModel:FindFirstChild("Medium")
-                local LongDistanceFolder = ReferenceModel:FindFirstChild("Long")
+                if not ReferenceModel then
+                    warn("No reference model found for AnchorPoint", AnchorPoint.Name)
+
+                    continue
+                end
+
+                --// Return distance folders
+                local DistanceFolderDictionary = {} --// looks like {[DistanceFolder: Folder] = InDistanceToCull: boolean}
+
+                for _, Folder: Folder in pairs (ReferenceModel:GetChildren()) do
+                    if not Folder:IsA("Folder") then
+                        continue
+                    end
+
+                    local DistanceAssociatedWithFolder = Settings["Distances"][Folder.Name]
+
+                    if not DistanceAssociatedWithFolder then
+                        warn("Distance Folder [", Folder.Name, "] in Model [", ReferenceModel.Name, "] does not have a distance associated with it")
+
+                        continue
+                    end
+
+                    local IsInDistance = InDistance(AnchorPointDistance, DistanceAssociatedWithFolder)
+
+                    DistanceFolderDictionary[Folder] = IsInDistance
+                end
 
                 --// Tells whether the model is culled in
-                local ModelCulledIn = module["AnchorPointModelCorrelations"][AnchorPoint]
-
-                --// Return whether the model is in distance for the short, medium, or long range to be culled in
-                local InShortDistance = InDistance(Distances[Index], Settings["Distances"]["Short"])
-                local InMediumDistance = InDistance(Distances[Index], Settings["Distances"]["Medium"])
-                local InLongDistance = InDistance(Distances[Index], Settings["Distances"]["Long"])
+                local ModelCulledIn = CheckIfModelIsAlreadyCulledIn(AnchorPoint)
                 
                 --[[
                     Evaluating whether to cull something in
@@ -490,17 +608,22 @@ local function CoreLoop()
                     end
                 end
 
-                --// Determines whether to Cull in short, medium, and long ranges
-                DetermineCullIn(ShortDistanceFolder, InShortDistance)
-                DetermineCullIn(MediumDistanceFolder, InMediumDistance)
-                DetermineCullIn(LongDistanceFolder, InLongDistance)
+                for DistanceFolder: Folder, IsInDistance: boolean in pairs (DistanceFolderDictionary) do
+                    DetermineCullIn(DistanceFolder, IsInDistance)
 
-                --// Determines whether to cull out short, medium, and long ranges
-                if ModelCulledIn then
-                    DetermineCullOut(ShortDistanceFolder, InShortDistance)
-                    DetermineCullOut(MediumDistanceFolder, InMediumDistance)
-                    DetermineCullOut(LongDistanceFolder, InLongDistance)
+                    if ModelCulledIn then
+                        DetermineCullOut(DistanceFolder, IsInDistance)
+                    end
                 end
+            end
+
+            --// Handles the backup check
+            if TimeSinceBackupCheck >= Settings["Backup Regularity"] then
+                TimeSinceBackupCheck = 0
+
+                BackupCheck(HumanoidRootPart)
+            else
+                TimeSinceBackupCheck = TimeSinceBackupCheck + 1
             end
         end
     end
@@ -595,7 +718,9 @@ function module.Initialize()
     RegionHandling:TrackRegionChanges()
 
     --// Actual culling portion (the core loop)
-    coroutine.wrap(CoreLoop)()
+    task.spawn(function()
+        CoreLoop()
+    end)
 end
 
 return module
