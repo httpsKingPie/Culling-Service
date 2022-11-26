@@ -259,6 +259,45 @@ function module.GenerateAnchorPointsForSelection()
     ChangeHistoryService:SetWaypoint("Added anchor points for selection")
 end
 
+function module.ResetAnchorPoints()
+    local SelectedObjects = Selection:Get()
+
+    local ErrorString = ""
+
+    local AnchorPointsToDestroy = {}
+
+    for _, AnchorPoint in pairs (SelectedObjects) do
+        if AnchorPoint.Parent == AnchorPoints then
+            local Model = ModelStorage:FindFirstChild(AnchorPoint.Name)
+
+            if Model then
+                CheckForPrimaryPart(Model)
+
+                local ModelToCull: Model = Model:Clone()
+
+                ModelToCull:PivotTo(AnchorPoint.CFrame)
+                ModelToCull.Parent = CulledObjects
+
+                table.insert(AnchorPointsToDestroy, AnchorPoint)
+            end
+        else
+            ErrorString = ErrorString.. AnchorPoint.Name.. ";"
+        end
+    end
+
+    for _, AnchorPoint in pairs (AnchorPointsToDestroy) do
+        AnchorPoint:Destroy()
+    end
+
+    if ErrorString == "" then
+        module.OutputText("Success - culled in all objects for anchor points")
+    else
+        module.OutputText("Partial success - some non-anchor points were selected or models were not found for the following instances: ".. ErrorString)
+    end
+
+    ChangeHistoryService:SetWaypoint("Anchor points reset")
+end
+
 function module.AutoMode()
     module.GenerateAnchorPointsForSelection()
     module.AddSelectionToModelStorage()
