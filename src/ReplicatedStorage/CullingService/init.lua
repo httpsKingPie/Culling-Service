@@ -112,8 +112,17 @@ local function GetAnchorPointsInRange(OriginPosition: Vector3)
 
     local AllTrackedAnchorPoints = RegionHandling:ReturnTrackedAnchorPoints()
 
-    for _, AnchorPoint in pairs (AllTrackedAnchorPoints) do
-        local Distance = (OriginPosition - AnchorPoint.Position).Magnitude
+    for _, AnchorPoint: BasePart in pairs (AllTrackedAnchorPoints) do
+        local Distance
+
+        if Settings["Ignore Y Dimension"] and Settings["Ignore Y Dimension"] == true then
+            local XDistance = OriginPosition.X - AnchorPoint.Position.X
+            local ZDistance = OriginPosition.Z - AnchorPoint.Position.Z
+
+            Distance = math.sqrt((XDistance ^ 2) + (ZDistance ^ 2))
+        else
+            Distance = (OriginPosition - AnchorPoint.Position).Magnitude
+        end
         
         AnchorPointDistances[AnchorPoint] = Distance
     end
@@ -502,7 +511,16 @@ local function BackupCheck(HumanoidRootPart: BasePart)
     end
 
     for AnchorPoint: BasePart, AssociatedModel: Model in pairs (module["AnchorPointModelCorrelations"]) do
-        local Distance = (HumanoidRootPart.Position - AnchorPoint.Position).Magnitude
+        local Distance
+
+        if Settings["Ignore Y Dimension"] and Settings["Ignore Y Dimension"] == true then
+            local XDistance = HumanoidRootPart.Position.X - AnchorPoint.Position.X
+            local ZDistance = HumanoidRootPart.Position.Z - AnchorPoint.Position.Z
+
+            Distance = math.sqrt((XDistance ^ 2) + (ZDistance ^ 2))
+        else
+            Distance = (HumanoidRootPart.Position - AnchorPoint.Position).Magnitude
+        end
 
         if Distance < FurthestDistance then
             continue
