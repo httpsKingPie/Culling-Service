@@ -781,7 +781,7 @@ function module.Initialize()
     --// Actual culling portion (the core loop)
     task.spawn(function()
         --// If the AutoStart setting is not included, CullingService will automatically start (for backwards compatability)
-        if not Settings["AutoStart"] then
+        if Settings["AutoStart"] == false then
             module:Pause()
         end
 
