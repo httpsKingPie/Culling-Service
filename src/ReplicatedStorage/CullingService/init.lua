@@ -107,10 +107,16 @@ local function ReturnModelValues(AnchorPoint: BasePart)
 end
 
 --// Returns all anchor points in relevant regions and their distance from the origin position (table format is {[AnchorPoint: BasePart] = Distance: number})
-local function GetAnchorPointsInRange(OriginPosition: Vector3)
+local function GetAnchorPointsInRange(OriginPosition: Vector3, FilterAnchorPoints: boolean)
     local AnchorPointDistances = {}
 
-    local AllTrackedAnchorPoints = RegionHandling:ReturnTrackedAnchorPoints()
+    local AllTrackedAnchorPoints
+
+    if FilterAnchorPoints then
+        AllTrackedAnchorPoints = RegionHandling:ReturnTrackedAnchorPoints()
+    else
+        AllTrackedAnchorPoints = RegionHandling["AllAnchorPoints"]
+    end
 
     for _, AnchorPoint: BasePart in pairs (AllTrackedAnchorPoints) do
         local Distance
@@ -500,7 +506,7 @@ local function ProcessCullOut(DistanceFolder: Folder, AnchorPoint: BasePart)
     end
 end
 
-local function BackupCheck(HumanoidRootPart: BasePart)
+local function BackupCheck(ReferencePosition: Vector3)
     local FurthestDistance = 0
 
     --// Get the furthest distance (earlier versions were less modularized)
@@ -514,12 +520,12 @@ local function BackupCheck(HumanoidRootPart: BasePart)
         local Distance
 
         if Settings["Ignore Y Dimension"] and Settings["Ignore Y Dimension"] == true then
-            local XDistance = HumanoidRootPart.Position.X - AnchorPoint.Position.X
-            local ZDistance = HumanoidRootPart.Position.Z - AnchorPoint.Position.Z
+            local XDistance = ReferencePosition.X - AnchorPoint.Position.X
+            local ZDistance = ReferencePosition.Z - AnchorPoint.Position.Z
 
             Distance = math.sqrt((XDistance ^ 2) + (ZDistance ^ 2))
         else
-            Distance = (HumanoidRootPart.Position - AnchorPoint.Position).Magnitude
+            Distance = (ReferencePosition - AnchorPoint.Position).Magnitude
         end
 
         if Distance < FurthestDistance then
@@ -530,6 +536,102 @@ local function BackupCheck(HumanoidRootPart: BasePart)
     end
 end
 
+local function EvaluateAnchorPointsForCulling(AnchorPointsInRange: table)
+    for AnchorPoint: BasePart, AnchorPointDistance: number in pairs (AnchorPointsInRange) do
+        --// Model that will be cloned if it is being culled in
+        local ReferenceModel = ModelStorage:FindFirstChild(AnchorPoint.Name)
+
+        if not ReferenceModel then
+            warn("No reference model found for AnchorPoint", AnchorPoint.Name)
+
+            continue
+        end
+
+        --// Return distance folders
+        local DistanceFolderDictionary = {} --// looks like {[DistanceFolder: Folder] = InDistanceToCull: boolean}
+
+        for _, Folder: Folder in pairs (ReferenceModel:GetChildren()) do
+            if not Folder:IsA("Folder") then
+                continue
+            end
+
+            local DistanceAssociatedWithFolder = Settings["Distances"][Folder.Name]
+
+            if not DistanceAssociatedWithFolder then
+                warn("Distance Folder [", Folder.Name, "] in Model [", ReferenceModel.Name, "] does not have a distance associated with it")
+
+                continue
+            end
+
+            local IsInDistance = InDistance(AnchorPointDistance, DistanceAssociatedWithFolder)
+
+            DistanceFolderDictionary[Folder] = IsInDistance
+        end
+
+        --// Tells whether the model is culled in
+        local ModelCulledIn = CheckIfModelIsAlreadyCulledIn(AnchorPoint)
+        
+        --[[
+            Evaluating whether to cull something in
+
+            Check for:
+                1. Folder exists
+                2. Is in distance to be culled
+                3. Model is not already culled in AND the range for that model is not already culled in
+        ]]
+
+        local function DetermineCullIn(DistanceFolder: Folder, IsInDistance: boolean)
+            --// 1.
+            if not DistanceFolder then
+                return
+            end
+
+            --// 2.
+            if not IsInDistance then
+                return
+            end
+
+            --// 3.
+            if ModelCulledIn and CheckIfRangeIsCulledIn(AnchorPoint, DistanceFolder.Name) then
+                return
+            end
+
+            ProcessCullIn(DistanceFolder, AnchorPoint) --// Cull it in
+        end
+
+        --[[
+            Evaluating whether to remove a range
+
+            Check for:
+                1. Folder exists
+                2. Is not in distance to be culled AND the range for that model is already culled
+        ]]
+
+        local function DetermineCullOut(DistanceFolder: Folder, IsInDistance: boolean)
+            --// 1.
+            if not DistanceFolder then
+                return
+            end
+
+            local RangeCulledIn = CheckIfRangeIsCulledIn(AnchorPoint, DistanceFolder.Name)
+
+            --// 2.
+            if not IsInDistance and RangeCulledIn then
+                ProcessCullOut(DistanceFolder, AnchorPoint)
+                return
+            end
+        end
+
+        for DistanceFolder: Folder, IsInDistance: boolean in pairs (DistanceFolderDictionary) do
+            DetermineCullIn(DistanceFolder, IsInDistance)
+
+            if ModelCulledIn then
+                DetermineCullOut(DistanceFolder, IsInDistance)
+            end
+        end
+    end
+end
+
 --// What actually handles the culling (back up check runs every five loops)
 local function CoreLoop()
     local TimeSinceBackupCheck = 0
@@ -537,112 +639,26 @@ local function CoreLoop()
     while true do
         task.wait(Settings["Wait Time"]) --// This doesn't have to be super specific, so I'm just using the basic Roblox wait function
         
-        if not Settings["Paused"] and HumanoidRootPart then --// If not paused and the player is alive and they are currently in a culling region
-            --// Search for all nodes at the furthest distances (long)
-            local AnchorPointDictionary = GetAnchorPointsInRange(HumanoidRootPart.Position)
+        if module["Paused"] == true then
+            continue
+        end
 
-            for AnchorPoint: BasePart, AnchorPointDistance: number in pairs (AnchorPointDictionary) do
-                --// Model that will be cloned if it is being culled in
-                local ReferenceModel = ModelStorage:FindFirstChild(AnchorPoint.Name)
+        if not HumanoidRootPart then
+            continue
+        end
 
-                if not ReferenceModel then
-                    warn("No reference model found for AnchorPoint", AnchorPoint.Name)
+        --// Search for all nodes at the furthest distances (long)
+        local AnchorPointsInRange = GetAnchorPointsInRange(HumanoidRootPart.Position, true)
 
-                    continue
-                end
+        EvaluateAnchorPointsForCulling(AnchorPointsInRange)
 
-                --// Return distance folders
-                local DistanceFolderDictionary = {} --// looks like {[DistanceFolder: Folder] = InDistanceToCull: boolean}
+        --// Handles the backup check
+        if TimeSinceBackupCheck >= Settings["Backup Regularity"] then
+            TimeSinceBackupCheck = 0
 
-                for _, Folder: Folder in pairs (ReferenceModel:GetChildren()) do
-                    if not Folder:IsA("Folder") then
-                        continue
-                    end
-
-                    local DistanceAssociatedWithFolder = Settings["Distances"][Folder.Name]
-
-                    if not DistanceAssociatedWithFolder then
-                        warn("Distance Folder [", Folder.Name, "] in Model [", ReferenceModel.Name, "] does not have a distance associated with it")
-
-                        continue
-                    end
-
-                    local IsInDistance = InDistance(AnchorPointDistance, DistanceAssociatedWithFolder)
-
-                    DistanceFolderDictionary[Folder] = IsInDistance
-                end
-
-                --// Tells whether the model is culled in
-                local ModelCulledIn = CheckIfModelIsAlreadyCulledIn(AnchorPoint)
-                
-                --[[
-                    Evaluating whether to cull something in
-
-                    Check for:
-                        1. Folder exists
-                        2. Is in distance to be culled
-                        3. Model is not already culled in AND the range for that model is not already culled in
-                ]]
-
-                local function DetermineCullIn(DistanceFolder: Folder, IsInDistance: boolean)
-                    --// 1.
-                    if not DistanceFolder then
-                        return
-                    end
-
-                    --// 2.
-                    if not IsInDistance then
-                        return
-                    end
-
-                    --// 3.
-                    if ModelCulledIn and CheckIfRangeIsCulledIn(AnchorPoint, DistanceFolder.Name) then
-                        return
-                    end
-
-                    ProcessCullIn(DistanceFolder, AnchorPoint) --// Cull it in
-                end
-
-                --[[
-                    Evaluating whether to remove a range
-
-                    Check for:
-                        1. Folder exists
-                        2. Is not in distance to be culled AND the range for that model is already culled
-                ]]
-
-                local function DetermineCullOut(DistanceFolder: Folder, IsInDistance: boolean)
-                    --// 1.
-                    if not DistanceFolder then
-                        return
-                    end
-
-                    local RangeCulledIn = CheckIfRangeIsCulledIn(AnchorPoint, DistanceFolder.Name)
-
-                    --// 2.
-                    if not IsInDistance and RangeCulledIn then
-                        ProcessCullOut(DistanceFolder, AnchorPoint)
-                        return
-                    end
-                end
-
-                for DistanceFolder: Folder, IsInDistance: boolean in pairs (DistanceFolderDictionary) do
-                    DetermineCullIn(DistanceFolder, IsInDistance)
-
-                    if ModelCulledIn then
-                        DetermineCullOut(DistanceFolder, IsInDistance)
-                    end
-                end
-            end
-
-            --// Handles the backup check
-            if TimeSinceBackupCheck >= Settings["Backup Regularity"] then
-                TimeSinceBackupCheck = 0
-
-                BackupCheck(HumanoidRootPart)
-            else
-                TimeSinceBackupCheck = TimeSinceBackupCheck + 1
-            end
+            BackupCheck(HumanoidRootPart.Position)
+        else
+            TimeSinceBackupCheck = TimeSinceBackupCheck + 1
         end
     end
 end
@@ -689,14 +705,41 @@ function module:CreateSignalForModelCullOutAtRange(ModelName: string, RangeName:
     return module["RangeAssociatedWithSignals"]["CullOut"][ModelName][RangeName]
 end
 
+--// Refreshes CullingService (essentianlly manually calling the Cull function around the player)
+function module:Refresh()
+    if HumanoidRootPart then --// This basically fast activates normal CullingService behavior
+        local AnchorPointsInRange = GetAnchorPointsInRange(HumanoidRootPart.Position, true)
+
+        EvaluateAnchorPointsForCulling(AnchorPointsInRange)
+
+        BackupCheck(HumanoidRootPart.Position)
+    end
+end
+
 --// Resumes CullingService
 function module:Resume()
+    if not module["Paused"] then
+        return
+    end
+
     module["Paused"] = false
+
+    module:Refresh()
 end
 
 --// Pauses CullingService
 function module:Pause()
     module["Paused"] = true
+end
+
+function module:ManualCull(Position: Vector3)
+    module:Pause()
+
+    local AnchorPointsAroundPosition = GetAnchorPointsInRange(Position, false)
+
+    EvaluateAnchorPointsForCulling(AnchorPointsAroundPosition) --// Culls in all new models around the position (will automatically filter for overlap)
+
+    BackupCheck(Position) --// Will remove all models that are not around this new positon
 end
 
 --// Initializes and runs CullingService
@@ -737,6 +780,11 @@ function module.Initialize()
 
     --// Actual culling portion (the core loop)
     task.spawn(function()
+        --// If the AutoStart setting is not included, CullingService will automatically start (for backwards compatability)
+        if not Settings["AutoStart"] then
+            module:Pause()
+        end
+
         CoreLoop()
     end)
 end

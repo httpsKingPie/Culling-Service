@@ -32,6 +32,7 @@ local CullingRegions = workspace:WaitForChild("CullingRegions")
 ]]
 
 local module = {
+    ["AllAnchorPoints"] = AnchorPoints:GetChildren(),
     ["Current Region"] = nil, --// Later populated, this will be the Region Index (XX.XX.XX format)
     ["Tracked Regions"] = {}, --// Simple table of all region names that are being tracked
     ["Tracked Anchor Points"] = {}, --// Simple table of all anchor points which need to actually be tracked
