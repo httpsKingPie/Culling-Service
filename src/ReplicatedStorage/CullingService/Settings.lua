@@ -1,7 +1,7 @@
 local module = {
     ["Animation Package"] = nil, --// Defaults to nil for backwards compatability
 
-    ["AutoStart"] = false, --// Whether CullingService automatically starts once initialized. Defaults to true for backwards compatability.
+    ["AutoStart"] = true, --// Whether CullingService automatically starts once initialized. Defaults to true for backwards compatability.
 
     ["Backup Regularity"] = 5, --// This means that the backup check runs every (x) times that the core loop activates.  To visualize this in time, multiply this value by the Wait Time value, and that is how often the backup check runs
 
