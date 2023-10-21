@@ -27,6 +27,34 @@ local module = {
     ["Total Visualized Parts"] = 0
 }
 
+local function GetFolder(FolderParent: Instance, FolderName: string)
+    if not FolderParent or not FolderName then
+        warn("Incomplete arguments provided for DefineFolder", FolderParent, FolderName)
+
+        return
+    end
+
+    local Folder = FolderParent:FindFirstChild(FolderName)
+
+    if Folder then
+        return Folder
+    end
+
+    local NewFolder = Instance.new("Folder")
+    NewFolder.Name = FolderName
+
+    NewFolder.Parent = FolderParent
+
+    return NewFolder
+end
+
+local function DefineFolders()
+    AnchorPoints = GetFolder(workspace, "AnchorPoints") --// Folder holding all anchor points
+    ModelStorage = GetFolder(ReplicatedStorage, "ModelStorage") --// Stores all models to be culled
+    CulledObjects = GetFolder(workspace, "CulledObjects") --// Stores all current culled objects
+    NonCulledObjects = GetFolder(ReplicatedStorage, "AnchorPoints") --// Not used in the context of this plugin, but basically used for ranges
+end
+
 local function CheckInsideRegion(PositionToCheck, BoundingBoxCFrame, BoundingBoxSize) --// Credits https://devforum.roblox.com/t/how-do-i-get-a-player-from-a-zone/464473/7
 	local BBVector3 = BoundingBoxCFrame:PointToObjectSpace(PositionToCheck)
 	return (math.abs(BBVector3.X) <= BoundingBoxSize.X / 2)
@@ -127,6 +155,8 @@ function module.OutputText(TextToOutput: string)
 end
 
 function module.AddSelectionToModelStorage()
+    DefineFolders()
+
     local SelectedObjects = Selection:Get()
 
     local ErrorString = ""
@@ -156,6 +186,8 @@ function module.AddSelectionToModelStorage()
 end
 
 function module.CullInEntireMap()
+    DefineFolders()
+
     for _, AnchorPoint in pairs (AnchorPoints:GetChildren()) do
         local AssociatedModelName = AnchorPoint.Name
 
@@ -175,6 +207,8 @@ function module.CullInEntireMap()
 end
 
 function module.CullOutEntireMap()
+    DefineFolders()
+
     local AllCulledObjects = CulledObjects:GetChildren()
 
     for _, Model in pairs (AllCulledObjects) do
@@ -191,6 +225,8 @@ function module.CullOutEntireMap()
 end
 
 function module.CullInSelection()
+    DefineFolders()
+
     local SelectedObjects = Selection:Get()
 
     local ErrorString = ""
@@ -222,6 +258,8 @@ function module.CullInSelection()
 end
 
 function module.CullOutSelection()
+    DefineFolders()
+
     local SelectedObjects = Selection:Get()
 
     for _, Model in pairs (SelectedObjects) do
@@ -238,6 +276,8 @@ function module.CullOutSelection()
 end
 
 function module.GenerateAnchorPointsForSelection()
+    DefineFolders()
+
     local SelectedObjects = Selection:Get()
 
     local ErrorString = ""
@@ -260,6 +300,8 @@ function module.GenerateAnchorPointsForSelection()
 end
 
 function module.ResetAnchorPoints()
+    DefineFolders()
+
     local SelectedObjects = Selection:Get()
 
     local ErrorString = ""

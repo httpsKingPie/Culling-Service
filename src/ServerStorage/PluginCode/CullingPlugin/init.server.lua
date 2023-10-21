@@ -118,7 +118,7 @@ local function GenerateInitializationButton()
     Button.Visible = true
 
     UIVisuals:BindMouseButton1Click({Button}, function()
-        if not InitCheck then
+        if not InitCheck() then
             warn("Errors initializing - check output box in Culling Plugin")
             return
         end
